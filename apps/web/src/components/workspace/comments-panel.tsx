@@ -16,6 +16,9 @@ import { ApiError } from '@/lib/api-client';
 import { relativeTime } from '@/lib/format';
 import type { CommentView, FindingView } from '@/lib/types';
 
+/** Open threads shown before the panel asks whether you want the rest. */
+const VISIBLE_THREADS = 6;
+
 export interface DraftAnchor {
   path: string;
   line: number;
@@ -102,19 +105,48 @@ export function CommentsPanel({
   });
 
   const unresolved = comments.filter((comment) => !comment.resolvedAt).length;
+  const resolved = comments.length - unresolved;
+
+  /**
+   * Bound what the panel renders.
+   *
+   * Measured on the seeded pull request after a dozen verification passes: 22 threads made this
+   * panel 2544px tall, which pushed the AI review and the merge gate out of reach and made the
+   * whole page 5.8 viewport heights. A review tool has to stay readable on a busy pull request, not
+   * only on a fresh one, so resolved threads are collapsed by default and the open list is capped
+   * with an explicit way to see the rest. Nothing is hidden without saying so.
+   */
+  const [showResolved, setShowResolved] = React.useState(false);
+  const [showAll, setShowAll] = React.useState(false);
+
+  const filtered = showResolved ? comments : comments.filter((comment) => !comment.resolvedAt);
+  const visible = showAll ? filtered : filtered.slice(0, VISIBLE_THREADS);
+  const hidden = filtered.length - visible.length;
 
   return (
     <Card>
       <CardHeader
         title="Discussion"
         subtitle={`${comments.length} thread${comments.length === 1 ? '' : 's'}, ${unresolved} open`}
+        actions={
+          resolved > 0 ? (
+            <Button size="sm" variant="ghost" onClick={() => setShowResolved((value) => !value)}>
+              {showResolved ? 'Hide' : 'Show'} {resolved} resolved
+            </Button>
+          ) : undefined
+        }
       />
 
       {comments.length === 0 ? (
         <EmptyState title="No comments yet" description="Start the discussion below." />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          title="No open threads"
+          description={`All ${resolved} thread${resolved === 1 ? '' : 's'} on this pull request are resolved.`}
+        />
       ) : (
         <ul className="divide-y divide-surface-border">
-          {comments.map((thread) => (
+          {visible.map((thread) => (
             <li key={thread.id} className="px-4 py-2.5">
               <Thread
                 comment={thread}
@@ -151,6 +183,16 @@ export function CommentsPanel({
             </li>
           ))}
         </ul>
+      )}
+
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="w-full border-t border-surface-border px-4 py-2 text-xs font-medium text-slate-600 hover:bg-surface-subtle"
+        >
+          Show {hidden} more thread{hidden === 1 ? '' : 's'}
+        </button>
       )}
 
       {canComment ? (

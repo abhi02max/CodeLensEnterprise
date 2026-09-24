@@ -191,33 +191,42 @@ export default function ReviewWorkspacePage() {
         </Card>
       )}
 
-      {/* ---------------------------------------------------------------- body */}
+      {/* ---------------------------------------------------------------- body
+          Panels whose only content comes from a run are omitted when there is no run. They used to
+          render regardless, so an un-analysed pull request — PR #415 in the demo data is one click
+          from the main path — showed the "Not analysed yet" call-out followed by four more cards
+          each repeating that there is nothing to show. Discussion, the merge gate, the verdict
+          controls, sharing and activity all work without a run, so those stay. */}
       <div className="grid gap-3 xl:grid-cols-3">
         <div className="space-y-3 xl:col-span-2">
-          <AiReviewPanel
-            aiReview={data.aiReview}
-            status={data.aiReviewStatus}
-            canRetry={permissions.canTriggerAnalysis}
-            onRetry={() => {
-              void api.analyze(sessionId, true).then(() => {
-                void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
-              });
-            }}
-          />
+          {data.analyzed && (
+            <AiReviewPanel
+              aiReview={data.aiReview}
+              status={data.aiReviewStatus}
+              canRetry={permissions.canTriggerAnalysis}
+              onRetry={() => {
+                void api.analyze(sessionId, true).then(() => {
+                  void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
+                });
+              }}
+            />
+          )}
 
-          <FindingsPanel
-            findings={data.findings}
-            comments={data.comments}
-            canComment={permissions.canComment}
-            onDiscuss={(finding: FindingView) =>
-              setAnchor({
-                path: finding.path ?? '',
-                line: finding.line ?? 1,
-                findingFingerprint: finding.fingerprint,
-                ruleId: finding.ruleId,
-              })
-            }
-          />
+          {data.analyzed && (
+            <FindingsPanel
+              findings={data.findings}
+              comments={data.comments}
+              canComment={permissions.canComment}
+              onDiscuss={(finding: FindingView) =>
+                setAnchor({
+                  path: finding.path ?? '',
+                  line: finding.line ?? 1,
+                  findingFingerprint: finding.fingerprint,
+                  ruleId: finding.ruleId,
+                })
+              }
+            />
+          )}
 
           <CommentsPanel
             sessionId={sessionId}
@@ -229,25 +238,34 @@ export default function ReviewWorkspacePage() {
             onClearAnchor={() => setAnchor(null)}
           />
 
-          <ContextPanel context={data.ragContext} />
+          {data.analyzed && <ContextPanel context={data.ragContext} />}
         </div>
 
+        {/*
+          Sidebar order is status, then action, then evidence. The merge gate answers "can this
+          ship" and so comes first; the verdict controls act on that answer; risk, metrics and
+          pipeline explain it. Having the verdict buttons above the gate meant the first thing a
+          reviewer saw was a control rather than the state it changes.
+        */}
         <div className="space-y-3">
-          <VerdictPanel sessionId={sessionId} session={data} />
           <GatePanel gate={data.gate} />
-          <RiskPanel risk={data.risk} />
+          <VerdictPanel sessionId={sessionId} session={data} />
+          {data.analyzed && <RiskPanel risk={data.risk} />}
           {data.metrics && <MetricsPanel metrics={data.metrics} />}
-          <ToolRunsPanel toolRuns={data.toolRuns} />
+          {data.analyzed && <ToolRunsPanel toolRuns={data.toolRuns} />}
           <SharePanel
             sessionId={sessionId}
             shareLinks={data.shareLinks}
             permissions={permissions}
           />
-          <ActivityPanel title="Recent activity" />
+          <ActivityPanel title="Recent activity" limit={6} />
         </div>
       </div>
 
-      {data.degradation.length > 0 && (
+      {/* Guarded on `analyzed` too: with no run there is nothing to have degraded, and the one entry
+          the API returns in that case ("has not been analysed yet") is the same sentence the empty
+          state and the merge gate already carry, under a heading that contradicts it. */}
+      {data.analyzed && data.degradation.length > 0 && (
         <Card>
           <CardHeader title="Degraded in this run" subtitle="What was unavailable and why" />
           <CardBody>

@@ -70,7 +70,16 @@ export function SharePanel({
       setError(caught instanceof ApiError ? caught.message : 'Could not revoke the link'),
   });
 
-  const active = shareLinks.filter((link) => !link.revokedAt);
+  const [showInactive, setShowInactive] = React.useState(false);
+
+  const active = shareLinks.filter(
+    (link) => !link.revokedAt && new Date(link.expiresAt).getTime() > Date.now(),
+  );
+  const inactive = shareLinks.filter(
+    (link) => link.revokedAt || new Date(link.expiresAt).getTime() <= Date.now(),
+  );
+
+  const visibleLinks = (showInactive ? shareLinks : active).slice(0, 6);
 
   if (!permissions.canCreateShareLink) {
     return (
@@ -196,9 +205,15 @@ export function SharePanel({
         </div>
       )}
 
-      {shareLinks.length > 0 && (
+      {/*
+        Active links first, and only those, until asked otherwise. Revoked and expired rows are kept
+        by the API on purpose — they are the record of who shared a review and when it was cut off —
+        but a demo pull request accumulates them, and this panel measured 1747px before it stopped
+        rendering every one of them by default.
+      */}
+      {visibleLinks.length > 0 && (
         <ul className="divide-y divide-surface-border">
-          {shareLinks.map((link) => {
+          {visibleLinks.map((link) => {
             const expired = new Date(link.expiresAt).getTime() < Date.now();
 
             return (
@@ -239,6 +254,22 @@ export function SharePanel({
             );
           })}
         </ul>
+      )}
+
+      {active.length === 0 && !showInactive && (
+        <div className="px-4 py-3">
+          <p className="text-xs text-slate-500">No active share links.</p>
+        </div>
+      )}
+
+      {inactive.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowInactive((value) => !value)}
+          className="w-full border-t border-surface-border px-4 py-2 text-xs font-medium text-slate-600 hover:bg-surface-subtle"
+        >
+          {showInactive ? 'Hide' : 'Show'} {inactive.length} revoked or expired
+        </button>
       )}
     </Card>
   );

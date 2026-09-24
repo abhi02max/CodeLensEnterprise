@@ -13,10 +13,19 @@ import { relativeTime } from '@/lib/format';
  * finding fingerprints, capability flags and resource ids, and a panel that prints whatever it is
  * handed is how internal detail ends up on a screen during a demo.
  */
-export function ActivityPanel({ resourceId, title = 'Activity' }: { resourceId?: string; title?: string }) {
+export function ActivityPanel({
+  resourceId,
+  title = 'Activity',
+  limit = 12,
+}: {
+  resourceId?: string;
+  title?: string;
+  /** Lower in the workspace sidebar, where activity is context rather than the subject. */
+  limit?: number;
+}) {
   const logs = useQuery({
-    queryKey: ['audit-logs', resourceId ?? 'all'],
-    queryFn: () => api.auditLogs({ pageSize: 12, ...(resourceId ? { resourceId } : {}) }),
+    queryKey: ['audit-logs', resourceId ?? 'all', limit],
+    queryFn: () => api.auditLogs({ pageSize: limit, ...(resourceId ? { resourceId } : {}) }),
   });
 
   return (
@@ -39,17 +48,21 @@ export function ActivityPanel({ resourceId, title = 'Activity' }: { resourceId?:
       ) : (
         <ul className="divide-y divide-surface-border">
           {logs.data?.items.map((entry) => (
-            <li key={entry.id} className="px-4 py-2">
-              <div className="flex items-baseline justify-between gap-2">
-                <Badge tone="outline">{entry.action}</Badge>
+            <li key={entry.id} className="px-4 py-1.5">
+              {/* Action, time and actor on one line: three stacked lines per entry made this panel
+                  1078px tall in the sidebar, where it is supporting context, not the subject. */}
+              <div className="flex items-baseline gap-2">
+                <Badge tone="outline" className="shrink-0">
+                  {entry.action}
+                </Badge>
+                <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
+                  {entry.actor ? entry.actor.name : entry.actorType.toLowerCase()}
+                </span>
                 <span className="shrink-0 text-xs text-slate-400">
                   {relativeTime(entry.createdAt)}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-slate-700">{entry.description}</p>
-              <p className="mt-0.5 text-xs text-slate-400">
-                {entry.actor ? entry.actor.name : `${entry.actorType.toLowerCase()} (no actor)`}
-              </p>
+              <p className="mt-0.5 line-clamp-2 text-xs text-slate-700">{entry.description}</p>
             </li>
           ))}
         </ul>

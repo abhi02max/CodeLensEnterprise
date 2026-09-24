@@ -304,7 +304,14 @@ export default function SharedReviewPage() {
                 </CardBody>
               ) : (
                 <ul className="divide-y divide-surface-border">
-                  {data.findings.map((finding, index) => (
+                  {/*
+                    Sorted most-severe-first here rather than trusting the payload order. The API
+                    orders by `severity: desc`, but Prisma sorts enums by declaration position, and
+                    Severity is declared CRITICAL-first — so `desc` yields INFO first. A screenshot
+                    review caught the shared page listing MEDIUM above CRITICAL, which inverts the
+                    one thing a shared review is meant to communicate.
+                  */}
+                  {sortBySeverity(data.findings).map((finding, index) => (
                     <li key={`${finding.ruleId}-${index}`} className="px-4 py-2.5">
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <SeverityBadge severity={finding.severity} />
@@ -440,6 +447,22 @@ export default function SharedReviewPage() {
       </div>
     </Shell>
   );
+}
+
+/** Most severe first, then by file and line so repeat renders are stable. */
+function sortBySeverity<T extends { severity: Severity; path: string | null; line: number | null }>(
+  findings: T[],
+): T[] {
+  return [...findings].sort((left, right) => {
+    const bySeverity =
+      SEVERITY_ORDER.indexOf(left.severity) - SEVERITY_ORDER.indexOf(right.severity);
+    if (bySeverity !== 0) return bySeverity;
+
+    const byPath = (left.path ?? '').localeCompare(right.path ?? '');
+    if (byPath !== 0) return byPath;
+
+    return (left.line ?? 0) - (right.line ?? 0);
+  });
 }
 
 function Shell({ children }: { children: React.ReactNode }) {

@@ -32,9 +32,9 @@ export function GatePanel({ gate }: { gate: ReviewGateStatus }) {
       <CardBody className="space-y-3">
         {gate.blockingReasons.length > 0 && (
           <div>
-            <p className="mb-1 text-xs font-semibold text-slate-700">
+            <h3 className="mb-1 text-xs font-semibold text-slate-700">
               Blocking ({gate.blockingReasons.length})
-            </p>
+            </h3>
             <ul className="space-y-1">
               {gate.blockingReasons.map((reason) => (
                 <li key={reason} className="flex gap-1.5 text-xs text-slate-700">
@@ -48,9 +48,9 @@ export function GatePanel({ gate }: { gate: ReviewGateStatus }) {
 
         {gate.warnings.length > 0 && (
           <div>
-            <p className="mb-1 text-xs font-semibold text-slate-700">
+            <h3 className="mb-1 text-xs font-semibold text-slate-700">
               Advisory ({gate.warnings.length})
-            </p>
+            </h3>
             <ul className="space-y-1">
               {gate.warnings.map((warning) => (
                 <li key={warning} className="flex gap-1.5 text-xs text-slate-600">

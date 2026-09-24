@@ -73,11 +73,60 @@ flow does not need — there are no menus, popovers or comboboxes here.
 Error states show the API's `traceId` when there is one. It is the only handle connecting what the
 user saw to the server log line.
 
+## Resetting the demo data
+
+```bash
+pnpm db:reset-demo
+```
+
+Every demo and every verification pass adds threads, verdicts and share links to the same seeded
+pull request, and forces another analysis run. It accumulates: after a dozen passes the Discussion
+panel measured 2544px tall and the Share panel 1747px, which buried the AI review and the merge gate
+under noise the product did not generate. The reset deletes comments, verdicts and share links,
+prunes runs down to the newest **completed** one per pull request, and clears the verdict-derived
+training labels. It leaves the organization, users, repository, pull requests and the surviving
+analysis alone, so the workspace still has real findings and a risk score immediately afterwards.
+
+Audit entries are not deleted. The audit trail is append-only by design, and a reset script that
+edits it would be the wrong thing to own. The activity panels are bounded instead.
+
+Re-seeding is not an alternative: `pnpm db:seed` upserts, so the accumulation survives it.
+
+Two details worth knowing:
+
+- Only a `COMPLETED` run counts as the keeper. PR #415 is seeded un-analysed on purpose so the
+  "Not analysed yet" state is demonstrable, and one experimental `analyze` call against it left a
+  run stuck at `FETCHING_DIFF` — which then became the state the list reported, permanently.
+- The panels are also bounded independently of the reset, so a demo that runs long still reads
+  cleanly: Discussion shows 6 threads, Share shows active links only, activity is capped.
+
 ## Verification
 
 ```bash
-pwsh -File apps/web/test/verify-web-flow.ps1     # 84 assertions
+pwsh -File apps/web/test/verify-web-flow.ps1     # 84 assertions, API contracts
+node apps/web/test/browser-walkthrough.mjs       # 80 assertions, real browser
 ```
+
+The browser walkthrough drives **system Chrome** through Playwright (`channel: 'chrome'`) rather
+than a bundled Chromium, because `playwright install chromium` could not complete on this network.
+It signs in, walks the demo flow, creates a comment, submits both verdicts, creates and opens a
+share link, and checks the tablet and mobile layouts. Alongside the functional assertions it audits
+each page for document overflow, elements wider than their container and clipped text, and fails on
+any unexpected console error. Screenshots land in `test/screenshots/` (gitignored) with a
+`report.json`.
+
+Run it against `next start`, not `next dev`. A `next build` while a dev server is live overwrites
+`.next/` from under it, and every `_next` chunk starts 404ing — which looks exactly like a broken
+app and is not.
+
+Two assertions exist specifically because an earlier version of each passed while the screen was
+wrong:
+
+- Panels are located by `getByRole('heading')`, not by text. Audit descriptions legitimately contain
+  phrases like "merge gate", and substring matching matched those instead.
+- Mobile checks measure the **position** of the risk cell and the Review link. A table inside
+  `overflow-x-auto` can be wider than its container with both parked off-screen while the document
+  reports zero overflow.
 
 Exercises the browser's own auth mechanism with a cookie jar, then every endpoint each screen
 calls, with field-level assertions matching what the components read. It also asserts both AI
@@ -89,9 +138,10 @@ states and adapts to whichever is configured:
   the narrative present in both the workspace and the shared view, and provider, model, token usage
   and cost absent from the shared view
 
-**Not covered:** browser interaction. The build, every route's response, and every API contract the
-screens depend on are verified; clicking through the flow in a browser is not something these
-assertions can do.
+**Not covered:** whether a real model writes a *good* review. The stub proves the path — parsing,
+schema validation, the repair loop, the evidence filter, policy reconciliation, persistence — and
+the browser pass proves the screens render it. Judging the prose needs a provider key and a person
+reading the output. Also not covered: any browser other than Chrome, and screen-reader behaviour.
 
 ## Deliberately absent
 

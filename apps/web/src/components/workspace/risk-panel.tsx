@@ -78,7 +78,9 @@ export function RiskPanel({ risk }: { risk: RiskView | null }) {
 
         {risk.reasons.length > 0 && (
           <div>
-            <p className="mb-1.5 text-xs font-semibold text-slate-700">Why this score</p>
+            {/* Real headings, not styled paragraphs: the workspace has a dozen sub-sections and
+                heading navigation is how a screen reader user moves between them. */}
+            <h3 className="mb-1.5 text-xs font-semibold text-slate-700">Why this score</h3>
             <ul className="space-y-1.5">
               {[...increasing, ...decreasing].map((reason) => (
                 <li key={reason.feature}>
@@ -114,7 +116,7 @@ export function RiskPanel({ risk }: { risk: RiskView | null }) {
 
         {risk.similarPullRequests.length > 0 && (
           <div>
-            <p className="mb-1.5 text-xs font-semibold text-slate-700">Similar past changes</p>
+            <h3 className="mb-1.5 text-xs font-semibold text-slate-700">Similar past changes</h3>
             <ul className="space-y-1">
               {risk.similarPullRequests.slice(0, 4).map((similar) => (
                 <li key={similar.reference} className="flex items-baseline justify-between gap-2">

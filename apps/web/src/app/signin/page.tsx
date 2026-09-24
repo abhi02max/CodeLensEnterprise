@@ -15,6 +15,22 @@ export default function SignInPage() {
   const [error, setError] = React.useState<ApiError | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
+  /**
+   * Gate submission on hydration.
+   *
+   * Sign-in is entirely client-side, so before React attaches its handler a click would trigger
+   * the browser's *native* form submission. Found in a browser pass: that navigated to
+   * `/signin?email=…&password=…`, putting the password in the URL, in history, and in any access
+   * log along the way. It happened because a stale build had left the JS chunks 404ing, which is
+   * exactly the class of failure this has to survive — a slow network or a bad deploy produces the
+   * same window.
+   *
+   * Two defences, because either alone is incomplete: the button is inert until the handler
+   * exists, and the fields carry no `name` so a native submit has nothing to serialise.
+   */
+  const [hydrated, setHydrated] = React.useState(false);
+  React.useEffect(() => setHydrated(true), []);
+
   // Someone landing here with a live session should not have to sign in again.
   React.useEffect(() => {
     if (status === 'authenticated') router.replace('/dashboard');
@@ -56,13 +72,18 @@ export default function SignInPage() {
           </p>
         </div>
 
-        <form onSubmit={onSubmit} className="rounded-lg border border-surface-border bg-white p-4">
+        <form
+          onSubmit={onSubmit}
+          // POST, and no field names: if a native submit ever happens, there is nothing to put in
+          // a query string. Autofill still works — browsers key on type and autocomplete, not name.
+          method="post"
+          className="rounded-lg border border-surface-border bg-white p-4"
+        >
           <div className="space-y-3">
             <div>
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
                 autoComplete="username"
                 required
@@ -84,7 +105,6 @@ export default function SignInPage() {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
-                name="password"
                 type="password"
                 autoComplete="current-password"
                 required
@@ -121,8 +141,15 @@ export default function SignInPage() {
             </Alert>
           )}
 
-          <Button type="submit" variant="primary" size="lg" loading={submitting} className="mt-4 w-full">
-            Sign in
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            loading={submitting}
+            disabled={!hydrated}
+            className="mt-4 w-full"
+          >
+            {hydrated ? 'Sign in' : 'Loading…'}
           </Button>
         </form>
 

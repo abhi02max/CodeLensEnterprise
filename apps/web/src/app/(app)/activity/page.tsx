@@ -13,8 +13,10 @@ export default function ActivityPage() {
         </p>
       </div>
 
-      <div className="max-w-2xl">
-        <ActivityPanel title="Audit trail" />
+      {/* Capped rather than full-bleed: a log is easier to scan when the line length is bounded,
+          but max-w-2xl left most of a 1440px screen empty and read as unfinished. */}
+      <div className="max-w-4xl">
+        <ActivityPanel title="Audit trail" limit={25} />
       </div>
     </div>
   );

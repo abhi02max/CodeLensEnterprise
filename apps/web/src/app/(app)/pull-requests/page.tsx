@@ -86,22 +86,35 @@ export default function PullRequestsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-border text-left text-xs text-slate-500">
+                  {/*
+                    Columns drop out below `lg` so the two that matter on a narrow screen — risk and
+                    the action — stay on screen. Previously the table scrolled inside its container,
+                    which passed an overflow check while leaving risk and Analyze unreachable on a
+                    phone without a horizontal swipe nobody would guess at.
+
+                    Hiding the columns was not enough on its own: `table-layout: auto` sizes columns
+                    from their content, and the title cell asked for up to `max-w-lg` (512px), which
+                    is wider than a phone. The table stayed wider than its container and Risk and
+                    Actions sat off-screen anyway. `w-full max-w-0` on the title cell inverts that —
+                    it asks for nothing and absorbs whatever is left after the other columns are
+                    satisfied, so the title ellipsizes instead of pushing them out.
+                  */}
                   <th scope="col" className="px-4 py-2 font-medium">PR</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Author</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Branch</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium lg:table-cell">Author</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium xl:table-cell">Branch</th>
                   <th scope="col" className="px-3 py-2 font-medium">Risk</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Latest run</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Reviews</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium md:table-cell">Latest run</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium lg:table-cell">Reviews</th>
                   <th scope="col" className="px-4 py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border">
                 {prs.data?.items.map((pr) => (
                   <tr key={pr.id} className="hover:bg-surface-subtle">
-                    <td className="px-4 py-2">
+                    <td className="w-full max-w-0 px-4 py-2">
                       <Link href={`/reviews/${pr.id}`} className="group flex items-baseline gap-2">
                         <span className="numeric shrink-0 text-xs text-slate-500">#{pr.number}</span>
-                        <span className="max-w-lg truncate font-medium text-slate-900 group-hover:underline">
+                        <span className="truncate font-medium text-slate-900 group-hover:underline">
                           {pr.title}
                         </span>
                         {pr.draft && <Badge tone="neutral">draft</Badge>}
@@ -111,8 +124,10 @@ export default function PullRequestsPage() {
                         {pr.changedFiles === 1 ? '' : 's'} · updated {relativeTime(pr.updatedAt)}
                       </p>
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{pr.author.login}</td>
-                    <td className="px-3 py-2">
+                    <td className="hidden px-3 py-2 text-xs text-slate-600 lg:table-cell">
+                      {pr.author.login}
+                    </td>
+                    <td className="hidden px-3 py-2 xl:table-cell">
                       <span className="font-mono text-xs text-slate-600">
                         {pr.headRef}
                         <span className="text-slate-400"> → {pr.baseRef}</span>
@@ -125,7 +140,7 @@ export default function PullRequestsPage() {
                         <span className="text-xs text-slate-400">not analysed</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="hidden px-3 py-2 md:table-cell">
                       {pr.latestRun ? (
                         <div className="flex items-center gap-1.5">
                           <RunStatusBadge status={pr.latestRun.status} />
@@ -137,7 +152,7 @@ export default function PullRequestsPage() {
                         <span className="text-xs text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="hidden px-3 py-2 lg:table-cell">
                       <div className="flex items-center gap-1.5 text-xs">
                         {pr.humanReviewSummary.approvals > 0 && (
                           <Badge tone="success">{pr.humanReviewSummary.approvals} approved</Badge>
@@ -159,7 +174,11 @@ export default function PullRequestsPage() {
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex items-center justify-end gap-1.5">
-                        <AnalyzeButton pullRequestId={pr.id} size="sm" />
+                        {/* Kicking off an analysis from a phone is not a real workflow, and the two
+                            buttons together left the title barely an ellipsis wide. Review stays. */}
+                        <span className="hidden sm:inline-flex">
+                          <AnalyzeButton pullRequestId={pr.id} size="sm" />
+                        </span>
                         <Link
                           href={`/reviews/${pr.id}`}
                           className="rounded-md border border-surface-border bg-white px-2.5 py-1 text-xs font-medium text-slate-800 hover:bg-surface-muted"

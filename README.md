@@ -91,6 +91,11 @@ pnpm db:push            # apply the Prisma schema
 pnpm db:seed            # demo org, users, policy
 ```
 
+`pnpm db:reset-demo` clears the collaboration layer the demo accumulates — comments, verdicts,
+share links and superseded analysis runs — while keeping one completed run so the review workspace
+still has something real to show. Worth running before a demo; see
+[apps/web/README.md](apps/web/README.md#resetting-the-demo-data).
+
 ### 3. Run the apps
 
 ```bash

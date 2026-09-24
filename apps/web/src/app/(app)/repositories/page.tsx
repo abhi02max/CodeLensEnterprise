@@ -96,40 +96,45 @@ export default function RepositoriesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-surface-border text-left text-xs text-slate-500">
+                  {/* Same reasoning as the pull request table: index state and open-PR count are
+                      what a narrow screen needs; branch and language are reference detail. */}
                   <th scope="col" className="px-4 py-2 font-medium">Repository</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Visibility</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Default branch</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Language</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium md:table-cell">Visibility</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium xl:table-cell">Default branch</th>
+                  <th scope="col" className="hidden px-3 py-2 font-medium lg:table-cell">Language</th>
                   <th scope="col" className="px-3 py-2 font-medium">Index</th>
                   <th scope="col" className="px-3 py-2 font-medium">Open PRs</th>
-                  <th scope="col" className="px-4 py-2 font-medium">Last sync</th>
+                  <th scope="col" className="hidden px-4 py-2 font-medium md:table-cell">Last sync</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border">
                 {repos.data?.items.map((repo) => (
                   <tr key={repo.id} className="hover:bg-surface-subtle">
-                    <td className="px-4 py-2">
+                    {/* `w-full max-w-0` for the same reason as the pull request table: it lets this
+                        column absorb the leftover width instead of demanding `max-w-md` and pushing
+                        Index and Open PRs off a narrow screen. */}
+                    <td className="w-full max-w-0 px-4 py-2">
                       <Link
                         href={`/pull-requests?repositoryId=${repo.id}`}
-                        className="font-medium text-slate-900 hover:underline"
+                        className="block truncate font-medium text-slate-900 hover:underline"
                       >
                         {repo.fullName}
                       </Link>
                       {repo.description && (
-                        <p className="mt-0.5 max-w-md truncate text-xs text-slate-500">
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
                           {repo.description}
                         </p>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="hidden px-3 py-2 md:table-cell">
                       <Badge tone={repo.private ? 'neutral' : 'outline'}>
                         {repo.private ? 'Private' : 'Public'}
                       </Badge>
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-600">
+                    <td className="hidden px-3 py-2 font-mono text-xs text-slate-600 xl:table-cell">
                       {repo.defaultBranch}
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">
+                    <td className="hidden px-3 py-2 text-xs text-slate-600 lg:table-cell">
                       {repo.primaryLanguage ?? '—'}
                     </td>
                     <td className="px-3 py-2">
@@ -148,7 +153,7 @@ export default function RepositoriesPage() {
                       )}
                     </td>
                     <td className="numeric px-3 py-2 text-slate-800">{repo.openPullRequestCount}</td>
-                    <td className="px-4 py-2 text-xs text-slate-500">
+                    <td className="hidden px-4 py-2 text-xs text-slate-500 md:table-cell">
                       {relativeTime(repo.lastSyncedAt)}
                     </td>
                   </tr>

@@ -55,27 +55,57 @@ function evidenceIdsFromPrompt(text) {
   return ids;
 }
 
-function changedPathsFromPrompt(text) {
-  const paths = new Set();
-  const pattern = /^FILE:\s+(\S+)/gm;
+/**
+ * Paths the prompt mentions, split by where they came from.
+ *
+ * `flagged` are files the static analyzers reported on, taken from the EVIDENCE section's
+ * `<path>:<line> — <message>` lines. `changed` are every file in the DIFF section, rendered as
+ * `--- <path> (<status>, <language>, +n/-m)`.
+ *
+ * The split matters for realism. A compliant model anchors a security finding to the file the
+ * analyzer flagged, not to whichever changed file happens to sort first. Anchoring to the diff
+ * order put a SQL-injection finding on `issue-refund.dto.ts`, and an earlier loose regex put it on
+ * `decimal.js` — picked out of the commit message "chore: bump decimal.js". Both looked like
+ * product bugs in a screenshot review.
+ */
+function pathsFromPrompt(text) {
+  const flagged = new Set();
+  const changed = new Set();
 
   let match;
-  while ((match = pattern.exec(text)) !== null) paths.add(match[1]);
 
-  // Fall back to any path-looking token if the prompt format differs.
-  if (paths.size === 0) {
-    const loose = text.match(/[\w./-]+\.(ts|tsx|js|json|sql|py)/g) ?? [];
-    for (const path of loose.slice(0, 4)) paths.add(path);
+  const findingPattern = /^\s{4}([\w.-]+\/[\w./-]+):\d+\s+—/gm;
+  while ((match = findingPattern.exec(text)) !== null) flagged.add(match[1]);
+
+  const diffPattern = /^---\s+(\S+)\s+\(/gm;
+  while ((match = diffPattern.exec(text)) !== null) changed.add(match[1]);
+
+  // Loose fallback, restricted to paths containing a directory separator so a bare dependency
+  // name in prose cannot be mistaken for a source file.
+  if (flagged.size === 0 && changed.size === 0) {
+    const loose = text.match(/[\w.-]+\/[\w./-]+\.(?:ts|tsx|js|json|sql|py)/g) ?? [];
+    for (const path of loose.slice(0, 6)) changed.add(path);
   }
 
-  return [...paths];
+  return { flagged: [...flagged], changed: [...changed] };
 }
 
 function baseReview(prompt, overrides = {}) {
   const evidence = evidenceIdsFromPrompt(prompt);
   const staticRun = evidence.find((entry) => entry.tool.includes('static')) ?? evidence[0];
-  const paths = changedPathsFromPrompt(prompt);
-  const primary = paths[0] ?? 'src/payments/refund.service.ts';
+  const { flagged, changed } = pathsFromPrompt(prompt);
+
+  // Analyzer-flagged files first, then the rest of the diff. Only the first three are explained,
+  // and diff order alone put `package.json` and a migration ahead of the file every finding is
+  // in, so the file-by-file section omitted the one file a reviewer cares about.
+  const paths = [...flagged, ...changed.filter((path) => !flagged.includes(path))];
+
+  // A finding is anchored to a file an analyzer actually flagged when one exists.
+  const primary =
+    flagged[0] ??
+    changed.find((path) => /^src\/.*\.(ts|tsx|js)$/.test(path)) ??
+    changed[0] ??
+    'src/payments/refund.service.ts';
 
   return {
     executiveSummary:
