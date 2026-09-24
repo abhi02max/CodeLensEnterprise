@@ -25,6 +25,7 @@ import {
   buildTestSuggestionMessages,
   type ReviewPromptInput,
 } from './prompts';
+import { AiReviewFailure } from './ai-errors';
 
 /**
  * AI review generation.
@@ -392,8 +393,28 @@ export class ReviewGenerator {
     };
 
     if (!secondAttempt.ok) {
-      throw new Error(
-        `AI response failed schema validation after one repair attempt: ${secondAttempt.errors.slice(0, 500)}`,
+      /**
+       * Thrown as a typed failure carrying which of the two things went wrong.
+       *
+       * "Not JSON at all" and "JSON of the wrong shape" look the same from the outside but
+       * point at different fixes: the first usually means the model or proxy is ignoring JSON
+       * mode, the second means the prompt and the schema have drifted apart. This used to throw
+       * one message saying "failed schema validation" for both, which made the distinction
+       * unrecoverable downstream.
+       *
+       * The Zod issue list stays on `cause`, never in the message: it quotes model output, and
+       * the message is persisted on a ToolRun that the API returns.
+       */
+      throw new AiReviewFailure(
+        secondAttempt.kind === 'UNPARSEABLE' ? 'MALFORMED_RESPONSE' : 'SCHEMA_INVALID',
+        secondAttempt.kind === 'UNPARSEABLE'
+          ? 'The model returned output that was not valid JSON and could not be repaired. ' +
+            'Nothing was saved. Static analysis and ML risk are unaffected.'
+          : 'The model returned a review that did not match the required structure, twice. ' +
+            'Nothing was saved rather than storing a partial review. Static analysis and ML ' +
+            'risk are unaffected.',
+        false,
+        new Error(secondAttempt.errors.slice(0, 500)),
       );
     }
 
@@ -409,7 +430,9 @@ export class ReviewGenerator {
   private tryParse<T>(
     raw: string,
     schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: Array<{ path: Array<string | number>; message: string }> } } },
-  ): { ok: true; value: T } | { ok: false; errors: string } {
+  ):
+    | { ok: true; value: T }
+    | { ok: false; kind: 'UNPARSEABLE' | 'SCHEMA'; errors: string } {
     let parsed: unknown;
 
     try {
@@ -417,7 +440,11 @@ export class ReviewGenerator {
       // in JSON mode.
       parsed = extractJson(raw);
     } catch (error) {
-      return { ok: false, errors: `Response was not parseable JSON: ${toErrorMessage(error)}` };
+      return {
+        ok: false,
+        kind: 'UNPARSEABLE',
+        errors: `Response was not parseable JSON: ${toErrorMessage(error)}`,
+      };
     }
 
     const result = schema.safeParse(parsed);
@@ -429,6 +456,6 @@ export class ReviewGenerator {
       .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
       .join('; ');
 
-    return { ok: false, errors };
+    return { ok: false, kind: 'SCHEMA', errors };
   }
 }

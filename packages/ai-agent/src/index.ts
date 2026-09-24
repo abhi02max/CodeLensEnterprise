@@ -37,3 +37,9 @@ export {
   type GeneratedReview,
   type ReviewGeneratorDependencies,
 } from './review-generator';
+
+export {
+  AiReviewFailure,
+  classifyAiFailure,
+  type AiFailureKind,
+} from './ai-errors';

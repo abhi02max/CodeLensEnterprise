@@ -181,6 +181,8 @@ Scopes requested: `read:user`, `user:email` for identity and `repo` for private 
 | `pnpm docker:up:all` | full stack including the ML service |
 | `pnpm ml:train` | retrain ML models |
 | `pnpm --filter @codelens/api worker` | dedicated background worker process |
+| `pwsh -File apps/api/test/verify-review-sessions.ps1` | review workspace regression suite |
+| `pwsh -File apps/api/test/verify-ai-review.ps1` | AI review path regression suite |
 
 Analysis, repository indexing and organization-wide GitHub sync are queued, not inline. In
 development `RUN_WORKERS_IN_API=true` runs the consumers inside the API. In production set it
@@ -209,12 +211,26 @@ that can clear findings from that gate, and time-limited external share links. H
 feed back into the ML training labels, so the risk model improves from review outcomes rather
 than staying frozen at its bootstrap weights.
 
-Two known gaps:
+The AI review path is wired, hardened and verified: generation, schema validation with a single
+repair attempt, evidence filtering that drops fabricated citations, policy reconciliation that
+overrides the model, persistence, and classified degradation for every provider failure mode.
 
-- **The AI review stage is built but unexercised.** Without `OPENAI_API_KEY` (or an Anthropic /
-  OpenRouter key) `generate_ai_review` reports itself skipped and the run is marked degraded
-  rather than failed. Evidence filtering, policy reconciliation and AI-review persistence have
-  therefore never actually executed.
-- **`apps/web` does not exist yet.** The API and its OpenAPI document are the only interface.
+What that verification did and did not cover, precisely:
 
-See the implementation blueprint for the phase-by-phase plan.
+- **Covered end to end**, against a local provider double that speaks the OpenAI wire format so
+  the real adapter, retry logic, validation, repair loop, evidence filter and persistence all
+  execute unchanged: the enabled happy path, fabricated and uncited evidence being dropped, the
+  model's APPROVE being overridden to REQUEST_CHANGES by policy, a malformed response being
+  repaired once, and seven provider failure modes each degrading only the AI stage while static
+  findings, ML risk, RAG context and the merge gate stay intact. 157 assertions.
+- **Not covered: whether a real model writes a *good* review.** No provider key is configured, so
+  no real inference has ever run. Set `OPENAI_API_KEY` (or the Anthropic / OpenRouter
+  equivalent) and re-run `apps/api/test/verify-ai-review.ps1 -Section enabled`; the assertions
+  check structure, evidence grounding and policy handling, but judging the prose is a human job.
+
+Remaining gap: **`apps/web` does not exist yet.** The API and its OpenAPI document are the only
+interface.
+
+See the implementation blueprint for the phase-by-phase plan, and
+[apps/api/README.md](apps/api/README.md) for the AI review contract and the verification
+harnesses.

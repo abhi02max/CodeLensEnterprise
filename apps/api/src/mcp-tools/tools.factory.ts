@@ -26,7 +26,7 @@ import {
   toPrFeatures,
   type AnalyzerFile,
 } from '@codelens/static-analysis';
-import { ReviewGenerator, createProvider } from '@codelens/ai-agent';
+import { ReviewGenerator, classifyAiFailure, createProvider } from '@codelens/ai-agent';
 import { defineTool, plainMeta } from '@codelens/ai-agent';
 import { NestToolLogger } from '../common/tool-logger';
 import { PolicyViolationError } from '../common/errors';
@@ -910,7 +910,21 @@ export class ToolsFactory {
         const contextPerFile: Record<string, never[]> = {};
         const bundle = state?.context;
 
-        const generated = await generator.generate(
+        /**
+         * Any provider or validation failure is classified before it leaves this tool.
+         *
+         * Two reasons. The raw error is unsafe to persist — a provider 400 can quote the prompt
+         * back, and a schema failure carries model output — and `ToolRun.error` is returned in
+         * the review workspace. And an unclassified message cannot tell a reviewer whether to
+         * re-run or to go fix a key, which is the only thing they actually want to know.
+         *
+         * It still throws rather than returning a successful-looking output: the ToolRun is
+         * recorded FAILED because the tool did fail. `generate_ai_review` is declared
+         * non-critical in the pipeline, so the run continues and finishes PARTIAL with the
+         * findings, risk and context that did succeed.
+         */
+        const generated = await generator
+          .generate(
           {
             pullRequest: {
               number: diff.number,
@@ -965,7 +979,19 @@ export class ToolsFactory {
             blockingSeverity: policy.blockingSeverity,
             signal: ctx.signal,
           },
-        );
+          )
+          .catch((error: unknown) => {
+            const failure = classifyAiFailure(error);
+
+            // The unsanitized cause is logged here and only here, so an operator can debug a
+            // provider problem from the server logs without it reaching a persisted field.
+            ctx.logger.warn(`AI review failed: ${failure.kind}`, {
+              retryable: failure.retryable,
+              cause: toErrorMessage(failure.cause ?? failure),
+            });
+
+            throw failure;
+          });
 
         if (ctx.reviewRunId) {
           this.scratchpad.update(ctx.reviewRunId, {

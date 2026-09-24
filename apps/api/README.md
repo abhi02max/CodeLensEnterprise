@@ -215,6 +215,122 @@ token at warn level, and logs are read by a wider audience than the database.
 - **Only static-finding and AI-finding fingerprints are validated.** Both are checked, but a
   fingerprint scheme added later would need adding to `assertFingerprintExists`.
 
+## AI review
+
+The AI review is one stage of eleven, and it is deliberately the most disposable one. It is
+declared non-critical in the pipeline, so when it cannot run the review still ships with static
+findings, ML risk, retrieved context and the merge gate intact.
+
+### Enabling a provider
+
+Set a key for whichever provider `AI_PROVIDER` names. Nothing else is required:
+
+```bash
+AI_PROVIDER=openai          # or anthropic, openrouter
+AI_MODEL=gpt-4o-mini
+OPENAI_API_KEY=sk-...       # ANTHROPIC_API_KEY / OPENROUTER_API_KEY for the others
+```
+
+With no key the process still boots. `validateEnv` emits a `[config]` warning rather than
+failing, because an API that refuses to start without an LLM key would make the whole product
+hostage to one optional dependency. `GET /health` reports `ai-provider` as `ok: false` with the
+reason, and the overall status becomes `degraded`, not `down`.
+
+Per-organization AI settings (`provider`, `model`, `temperature`, `maxOutputTokens`,
+`allowExternalModelCalls`, `redactSecretsBeforeSend`) override the environment. `AI_*` is the
+deployment default; the org row is the tenant's choice.
+
+`OPENAI_BASE_URL` retargets the OpenAI adapter, which is what makes Azure OpenAI, LiteLLM, vLLM
+and a local test double all work without code changes.
+
+### Three gates before any content leaves
+
+1. `allowExternalModelCalls: false` on the organization — refuses outright, no request is made.
+2. Secrets detected in the diff and `blockOnSecretDetection` set — refuses, because sending a
+   committed credential to a third party makes a bad situation worse.
+3. Otherwise, if `redactSecretsBeforeSend` is on, every detected secret is replaced in the diff
+   before it is sent, and the review records `redactedBeforeSend`.
+
+### What the model is not trusted with
+
+- **Evidence filtering.** Any finding in SECURITY or DEPENDENCY, or any finding marked CRITICAL,
+  must cite a `ToolRun` id that actually executed in this run. Uncited and fabricated citations
+  are dropped and counted in `droppedFindingCount`. This is the highest-leverage hallucination
+  control in the system, because those categories are exactly the ones a reviewer acts on
+  without double-checking.
+- **Policy reconciliation.** The model does not get the last word on approval. A surviving
+  finding at or above `blockingSeverity`, a detected secret, or a risk score past
+  `riskScoreGate` forces `effectiveRecommendation` to REQUEST_CHANGES with `policyOverridden`
+  and `policyReasons` set. `modelRecommendation` is kept alongside it so the disagreement is
+  visible rather than silently rewritten.
+- **Structure.** Every response is parsed and validated against `AiReviewSchema`. A failure gets
+  exactly one repair attempt, which shows the model its own output and the validation errors. A
+  second failure persists nothing — a partial review is worse than no review, because it looks
+  complete.
+
+### When it fails
+
+`aiReviewStatus` on the analysis and workspace payloads carries the outcome, so a client can
+tell the three cases apart and offer the right action:
+
+| `state` | Meaning | `retryable` |
+| --- | --- | --- |
+| `GENERATED` | A review exists | — |
+| `SKIPPED` | A gate refused: no key, org opt-out, secrets in the diff | `false` |
+| `FAILED` | The provider or the response failed | varies |
+| `NOT_RUN` | An upstream stage it depends on did not complete | `true` |
+
+`retryable` distinguishes a transient blip from a configuration problem. A 429, a 5xx or a
+timeout says re-run. A rejected key, a missing model, a diff past the context window, or a
+response that failed the schema twice says fix something first — re-running just fails again.
+
+Retry behaviour follows the same split. The provider adapter retries 429 and 5xx up to three
+times with backoff; it never retries 400/401/403/404. The schema repair is capped at one attempt,
+because a model that has failed the same schema twice is not converging and the third call is
+pure spend.
+
+### Error text is sanitized
+
+`ToolRun.error` is returned by `/review-runs/:id` and embedded in the review workspace, so it is
+effectively tenant-visible. Provider response bodies never reach it: a 400 from OpenAI or
+Anthropic routinely quotes the offending input back, which here is the diff and the assembled
+prompt. `toProviderError` keeps the status and the provider's machine-readable code
+(`invalid_api_key`, `context_length_exceeded`) and discards the body. `classifyAiFailure` then
+turns that into a sentence written for a reviewer, keeping the unsanitized cause on `cause` for
+server-side logging only.
+
+Shared links carry the narrative — executive summary, technical summary, beginner explanation,
+recommendation, rationale, checklist — and none of the machinery: no provider or model name, no
+prompt version, no token usage, no cost, no per-finding evidence ids, no tool runs.
+
+## Verification harnesses
+
+Two committed scripts, both idempotent and safe to re-run against seeded data:
+
+```bash
+pwsh -File apps/api/test/verify-review-sessions.ps1    # 87 assertions
+pwsh -File apps/api/test/verify-ai-review.ps1          # -Section all|disabled|enabled|failures
+pnpm --filter @codelens/ai-agent test                  # failure classification units
+```
+
+`apps/api/test/fixtures/llm-stub.js` is a **test double, never part of the product**. It speaks
+the OpenAI wire format so the real provider adapter, retry logic, JSON extraction, Zod
+validation, repair loop, evidence filter and persistence all execute unchanged:
+
+```bash
+node apps/api/test/fixtures/llm-stub.js
+# then, in the API process:
+OPENAI_API_KEY=local-stub-not-a-real-key OPENAI_BASE_URL=http://127.0.0.1:4599/v1 pnpm start
+```
+
+It exists because the failure modes that matter most cannot be produced on demand from a real
+provider: a rejected key, output that is not JSON, output that is JSON of the wrong shape,
+fabricated evidence ids, and a model recommending approval of a change with a CRITICAL finding.
+Switch behaviour with `POST /__scenario {"scenario":"..."}`; inspect calls with `GET /__calls`.
+
+It does **not** establish that a real model writes a good review. That needs a real key and a
+human reading the output.
+
 ## Configuration
 
 Environment is validated at startup by `src/config/env.schema.ts` and the process refuses to

@@ -186,6 +186,9 @@ export class ReviewSessionsService {
       risk: analysis.risk,
       findings: analysis.findings,
       aiReview: analysis.aiReview,
+      // Lets the UI distinguish "the org turned this off" from "the provider failed", which are
+      // a settings link and a re-run button respectively.
+      aiReviewStatus: analysis.aiReviewStatus,
       summary: analysis.summary,
       metrics: analysis.metrics,
 

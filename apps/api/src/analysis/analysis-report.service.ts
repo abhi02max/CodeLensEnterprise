@@ -13,6 +13,92 @@ import {
 import { NotFoundError } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** The AI review tool's outcome, in the form the UI needs to decide what to offer. */
+export interface AiReviewStatus {
+  state: 'GENERATED' | 'SKIPPED' | 'FAILED' | 'NOT_RUN';
+  /** Reviewer-facing explanation. Already sanitized upstream; never a provider payload. */
+  reason: string | null;
+  /**
+   * True when re-running the analysis could plausibly produce a review. False for a
+   * configuration problem — a rejected API key, a diff past the model's context window — where
+   * re-running just fails again.
+   */
+  retryable: boolean;
+}
+
+/**
+ * Failure codes the tool registry prefixes onto `ToolRun.error`, mapped to whether a re-run is
+ * worth offering. Kept in step with `classifyAiFailure` in `@codelens/ai-agent`.
+ */
+const RETRYABLE_AI_FAILURE_HINTS = /TIMED_OUT|RATE_LIMITED|PROVIDER_UNAVAILABLE|did not respond|rate-limited|server error/i;
+
+interface ToolRunSummary {
+  tool: string;
+  status: string;
+  error: string | null;
+  output: unknown;
+}
+
+/**
+ * Read the AI tool's own account of what happened.
+ *
+ * Three distinct outcomes hide behind "no AI review", and the previous single fallback sentence
+ * conflated them: the tool ran and deliberately skipped (no key, policy opt-out, secrets in the
+ * diff), the tool ran and failed (provider or schema), or the tool never ran at all because an
+ * upstream dependency died. Each one needs a different response from whoever is reading.
+ */
+function describeAiStatus(toolRuns: readonly ToolRunSummary[]): AiReviewStatus {
+  const run = toolRuns.find((tool) => tool.tool === 'generate_ai_review');
+
+  if (!run) {
+    return {
+      state: 'NOT_RUN',
+      reason:
+        'The AI review stage did not run, because an earlier stage it depends on did not ' +
+        'complete.',
+      retryable: true,
+    };
+  }
+
+  if (run.status === 'SUCCESS') {
+    const skippedReason =
+      run.output && typeof run.output === 'object' && !Array.isArray(run.output)
+        ? (run.output as Record<string, unknown>).skippedReason
+        : undefined;
+
+    return {
+      state: 'SKIPPED',
+      reason:
+        typeof skippedReason === 'string'
+          ? skippedReason
+          : 'The AI review stage completed without producing a review.',
+      // A deliberate skip is a configuration decision, so re-running changes nothing.
+      retryable: false,
+    };
+  }
+
+  // `ToolRun.error` is `<CODE>: <message>`. The code is for operators; the message was written
+  // for the reviewer by classifyAiFailure, so only the message is surfaced.
+  const raw = run.error ?? '';
+  const message = raw.includes(': ') ? raw.slice(raw.indexOf(': ') + 2) : raw;
+
+  return {
+    state: 'FAILED',
+    reason:
+      message ||
+      'The AI review could not be generated. Static analysis and metrics are still available.',
+    retryable: RETRYABLE_AI_FAILURE_HINTS.test(raw),
+  };
+}
+
+/** The degradation note for a missing AI review: the stored reason, not a generic sentence. */
+function describeAiGap(toolRuns: readonly ToolRunSummary[]): string {
+  return (
+    describeAiStatus(toolRuns).reason ??
+    'The AI review could not be generated. Static analysis and metrics are still available below.'
+  );
+}
+
 /**
  * Assembles the complete analysis payload for a pull request.
  *
@@ -69,6 +155,11 @@ export class AnalysisReportService {
         run: null,
         risk: null,
         summary: null,
+        aiReviewStatus: {
+          state: 'NOT_RUN',
+          reason: 'This pull request has not been analysed yet.',
+          retryable: true,
+        } satisfies AiReviewStatus,
         findings: [],
         ragContext: [],
         aiReview: null,
@@ -104,13 +195,7 @@ export class AnalysisReportService {
       );
     }
     if (!run.hadAiReview) {
-      const skipped = run.toolRuns.find((tool) => tool.tool === 'generate_ai_review');
-      const reason =
-        skipped?.output && typeof skipped.output === 'object' && !Array.isArray(skipped.output)
-          ? ((skipped.output as Record<string, unknown>).skippedReason as string | undefined)
-          : undefined;
-
-      degradation.push(reason ?? 'The AI review was not generated for this run.');
+      degradation.push(describeAiGap(run.toolRuns));
     }
 
     const prediction = run.mlPrediction;
@@ -183,6 +268,18 @@ export class AnalysisReportService {
 
       // ---- narrative summary, preferring the AI executive summary
       summary: ai?.executiveSummary ?? null,
+
+      /**
+       * Why there is no AI review, when there isn't one.
+       *
+       * Separate from `degradation` because the client needs to branch on it: a review skipped
+       * because the organization disabled external model calls is a settings link, whereas a
+       * provider outage is a "re-run" button. One undifferentiated sentence forced the UI to
+       * treat both the same.
+       */
+      aiReviewStatus: ai
+        ? ({ state: 'GENERATED', reason: null, retryable: false } satisfies AiReviewStatus)
+        : describeAiStatus(run.toolRuns),
 
       // ---- deterministic findings
       findings: run.findings.map((finding) => ({

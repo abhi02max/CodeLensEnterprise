@@ -74,6 +74,11 @@ export class LlmProviderError extends Error {
     readonly status: number | null,
     readonly retryable: boolean,
     readonly provider: string,
+    /**
+     * A short machine code from the provider, such as `invalid_api_key` or
+     * `context_length_exceeded`. Safe to show a user: it is an enum value, not content.
+     */
+    readonly detail: string | null = null,
   ) {
     super(message);
     this.name = 'LlmProviderError';
@@ -317,19 +322,66 @@ export class ProviderRouter implements LlmProvider {
   }
 }
 
+/**
+ * Turn a failed HTTP response into an error, without carrying the response body.
+ *
+ * The body is deliberately dropped. This error's message ends up on `ToolRun.error`, which the
+ * API returns in the review workspace and in run detail — and a 400 from OpenAI or Anthropic
+ * routinely quotes the offending input back, which here is the diff and the assembled prompt.
+ * Echoing it would publish repository content and the internal prompt through an error field.
+ *
+ * What is extracted instead is the provider's machine-readable `code` or `type`, which is an
+ * enum value (`invalid_api_key`, `context_length_exceeded`) and tells the operator what to fix
+ * without reproducing anything that was sent.
+ */
 async function toProviderError(response: Response, provider: string): Promise<LlmProviderError> {
   const body = await response.text().catch(() => '');
+  const detail = extractProviderErrorCode(body);
 
   // 429 and 5xx are transient. 400/401/403 indicate a configuration problem and
   // retrying only wastes time and quota.
   const retryable = response.status === 429 || response.status >= 500;
 
   return new LlmProviderError(
-    `${provider} request failed (${response.status}): ${body.slice(0, 400)}`,
+    `${provider} request failed with HTTP ${response.status}` +
+      (detail ? ` (${detail})` : '') +
+      '. Response body withheld: provider errors can echo the submitted prompt.',
     response.status,
     retryable,
     provider,
+    detail,
   );
+}
+
+/**
+ * Pull the provider's error code out of a JSON error body, if there is one.
+ *
+ * Constrained on purpose: only a short, identifier-shaped value from a known field is accepted.
+ * A provider that returns prose in `code` gets nothing extracted rather than having prose
+ * forwarded into a persisted error field.
+ */
+function extractProviderErrorCode(body: string): string | null {
+  if (!body) return null;
+
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { code?: unknown; type?: unknown };
+      type?: unknown;
+    };
+
+    const candidate =
+      firstString(parsed.error?.code) ?? firstString(parsed.error?.type) ?? firstString(parsed.type);
+
+    if (candidate && /^[a-z0-9_.-]{1,60}$/i.test(candidate)) return candidate;
+  } catch {
+    // Not JSON, or an unexpected shape. Either way there is nothing safe to extract.
+  }
+
+  return null;
+}
+
+function firstString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 /** Build a provider from organization settings. */
