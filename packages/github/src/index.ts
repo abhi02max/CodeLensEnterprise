@@ -20,6 +20,8 @@ export {
   touchedLineNumbers,
   type AddedLine,
   type RawGithubFile,
+  type ReconstructedLine,
+  type ReconstructedSides,
 } from './diff-parser';
 
 export {

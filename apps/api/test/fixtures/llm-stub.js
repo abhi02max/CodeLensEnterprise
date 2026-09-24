@@ -56,38 +56,41 @@ function evidenceIdsFromPrompt(text) {
 }
 
 /**
- * Paths the prompt mentions, split by where they came from.
+ * Paths and line numbers the prompt mentions, split by where they came from.
  *
- * `flagged` are files the static analyzers reported on, taken from the EVIDENCE section's
- * `<path>:<line> — <message>` lines. `changed` are every file in the DIFF section, rendered as
- * `--- <path> (<status>, <language>, +n/-m)`.
+ * `flagged` are the static analyzers' own findings, taken from the EVIDENCE section's
+ * `<path>:<line> — <message>` lines, so each carries a line as well as a path. `changed` are every
+ * file in the DIFF section, rendered as `--- <path> (<status>, <language>, +n/-m)`.
  *
- * The split matters for realism. A compliant model anchors a security finding to the file the
- * analyzer flagged, not to whichever changed file happens to sort first. Anchoring to the diff
- * order put a SQL-injection finding on `issue-refund.dto.ts`, and an earlier loose regex put it on
- * `decimal.js` — picked out of the commit message "chore: bump decimal.js". Both looked like
- * product bugs in a screenshot review.
+ * The split matters for realism. A compliant model anchors a security finding to the file *and the
+ * line* the analyzer flagged, not to whichever changed file happens to sort first and a line it
+ * invented. Anchoring to the diff order put a SQL-injection finding on `issue-refund.dto.ts`, and an
+ * earlier loose regex put it on `decimal.js` — picked out of the commit message "chore: bump
+ * decimal.js". The line was hardcoded to 60, which stayed plausible only until the fixture's hunk
+ * grew and the real call moved to 69. All of them looked like product bugs in a screenshot review.
  */
 function pathsFromPrompt(text) {
-  const flagged = new Set();
+  const flagged = [];
   const changed = new Set();
 
   let match;
 
-  const findingPattern = /^\s{4}([\w.-]+\/[\w./-]+):\d+\s+—/gm;
-  while ((match = findingPattern.exec(text)) !== null) flagged.add(match[1]);
+  const findingPattern = /^\s{4}([\w.-]+\/[\w./-]+):(\d+)\s+—/gm;
+  while ((match = findingPattern.exec(text)) !== null) {
+    flagged.push({ path: match[1], line: Number(match[2]) });
+  }
 
   const diffPattern = /^---\s+(\S+)\s+\(/gm;
   while ((match = diffPattern.exec(text)) !== null) changed.add(match[1]);
 
   // Loose fallback, restricted to paths containing a directory separator so a bare dependency
   // name in prose cannot be mistaken for a source file.
-  if (flagged.size === 0 && changed.size === 0) {
+  if (flagged.length === 0 && changed.size === 0) {
     const loose = text.match(/[\w.-]+\/[\w./-]+\.(?:ts|tsx|js|json|sql|py)/g) ?? [];
     for (const path of loose.slice(0, 6)) changed.add(path);
   }
 
-  return { flagged: [...flagged], changed: [...changed] };
+  return { flagged, changed: [...changed] };
 }
 
 function baseReview(prompt, overrides = {}) {
@@ -95,17 +98,25 @@ function baseReview(prompt, overrides = {}) {
   const staticRun = evidence.find((entry) => entry.tool.includes('static')) ?? evidence[0];
   const { flagged, changed } = pathsFromPrompt(prompt);
 
+  // The most severe thing the analyzers reported, which is what the review should lead on. The
+  // EVIDENCE section is ordered by severity, so the first entry is it.
+  const leadFinding = flagged[0];
+
+  const flaggedPaths = [...new Set(flagged.map((entry) => entry.path))];
+
   // Analyzer-flagged files first, then the rest of the diff. Only the first three are explained,
   // and diff order alone put `package.json` and a migration ahead of the file every finding is
   // in, so the file-by-file section omitted the one file a reviewer cares about.
-  const paths = [...flagged, ...changed.filter((path) => !flagged.includes(path))];
+  const paths = [...flaggedPaths, ...changed.filter((path) => !flaggedPaths.includes(path))];
 
-  // A finding is anchored to a file an analyzer actually flagged when one exists.
+  // A finding is anchored to the file and line an analyzer actually reported, when one exists.
   const primary =
-    flagged[0] ??
+    leadFinding?.path ??
     changed.find((path) => /^src\/.*\.(ts|tsx|js)$/.test(path)) ??
     changed[0] ??
     'src/payments/refund.service.ts';
+
+  const primaryLine = leadFinding?.line ?? null;
 
   return {
     executiveSummary:
@@ -144,7 +155,7 @@ function baseReview(prompt, overrides = {}) {
           'The ledger update is assembled with $executeRawUnsafe and interpolated values, so a ' +
           'value that reaches it can alter the statement. Use a parameterised query.',
         path: primary,
-        line: 60,
+        line: primaryLine,
         suggestedFix:
           'await this.db.$executeRaw`UPDATE charges SET refunded_cents = ${amount} WHERE id = ${id} AND organization_id = ${orgId}`;',
         evidence: staticRun ? [staticRun.id] : [],

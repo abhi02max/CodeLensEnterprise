@@ -381,6 +381,10 @@ export class ToolsFactory {
             touchedLines: new Set(file.touchedLines),
             additions: file.additions,
             deletions: file.deletions,
+            // Where each reconstructed line actually sits in the post-change file. Without this an
+            // analyzer can match a line but cannot say which line it matched, because `content`
+            // starts at the first hunk rather than at line 1.
+            contentLineNumbers: sides.afterLines.map((line) => line.newLineNumber),
           };
         });
 

@@ -15,6 +15,19 @@ export interface AnalyzerFile {
   touchedLines: Set<number>;
   additions: number;
   deletions: number;
+  /**
+   * New-file line number for each line of `content`, parallel to `content.split('\n')`.
+   *
+   * Required to report *where* a matched line is. When `content` is reconstructed from diff hunks
+   * it is a fragment: its index 0 is wherever the first hunk starts, so an index is not a line
+   * number and the two differ by however much of the file the diff skipped. Absent when `content`
+   * is a whole file, in which case index + 1 is already correct.
+   *
+   * A plain number array rather than the richer `ReconstructedLine` from `@codelens/github`: this
+   * package deliberately does not depend on the GitHub client, and the only thing an analyzer needs
+   * is the position.
+   */
+  contentLineNumbers?: readonly (number | null)[];
 }
 
 export interface AnalyzerInput {

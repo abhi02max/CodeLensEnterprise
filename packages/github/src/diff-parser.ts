@@ -241,31 +241,66 @@ export function removedLines(hunks: readonly DiffHunk[]): AddedLine[] {
   return result;
 }
 
+/** One line of reconstructed content, with its position in each side of the change. */
+export interface ReconstructedLine {
+  content: string;
+  /** Position in the post-change file. Null only for a line that was removed. */
+  newLineNumber: number | null;
+  /** Position in the pre-change file. Null for a line that was added. */
+  oldLineNumber: number | null;
+}
+
+export interface ReconstructedSides {
+  before: string;
+  after: string;
+  /** Parallel to `after.split('\n')`. */
+  afterLines: ReconstructedLine[];
+  /** Parallel to `before.split('\n')`. */
+  beforeLines: ReconstructedLine[];
+}
+
 /**
  * Reconstruct partial "before" and "after" file content from the diff.
  *
  * Only the regions the diff covers, which is exactly what the complexity
  * analyzer needs to compute a before/after delta without fetching both full
  * blobs from GitHub — two extra API calls per file adds up fast on a large PR.
+ *
+ * The line arrays exist because the joined strings are *fragments*: index 0 of
+ * `after` is wherever the first hunk starts, not line 1 of the file. Any analyzer
+ * that matches a line and wants to report where it is needs the mapping back, and
+ * without it the only thing available was a guess. `parseUnifiedPatch` already
+ * tracked these numbers; this stops throwing them away.
  */
-export function reconstructSides(hunks: readonly DiffHunk[]): { before: string; after: string } {
-  const before: string[] = [];
-  const after: string[] = [];
+export function reconstructSides(hunks: readonly DiffHunk[]): ReconstructedSides {
+  const before: ReconstructedLine[] = [];
+  const after: ReconstructedLine[] = [];
 
   for (const hunk of hunks) {
     for (const line of hunk.lines) {
+      const entry: ReconstructedLine = {
+        content: line.content,
+        newLineNumber: line.newLineNumber,
+        oldLineNumber: line.oldLineNumber,
+      };
+
       if (line.type === 'add') {
-        after.push(line.content);
+        after.push(entry);
       } else if (line.type === 'del') {
-        before.push(line.content);
+        before.push(entry);
       } else {
-        before.push(line.content);
-        after.push(line.content);
+        before.push(entry);
+        after.push(entry);
       }
     }
   }
 
-  return { before: before.join('\n'), after: after.join('\n') };
+  return {
+    before: before.map((line) => line.content).join('\n'),
+    after: after.map((line) => line.content).join('\n'),
+    afterLines: after,
+    beforeLines: before,
+  };
 }
 
 /**

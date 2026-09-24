@@ -9,7 +9,7 @@ import {
   type StaticFinding,
 } from '@codelens/shared';
 import { fingerprintFinding } from '../sandbox';
-import type { AnalyzerInput } from '../types';
+import type { AnalyzerFile, AnalyzerInput } from '../types';
 
 /**
  * Secret detection over added lines.
@@ -36,7 +36,7 @@ export function runSecretScan(input: AnalyzerInput): AnalyzerResult & { hits: Se
 
     // Only added lines. A PR that removes a hardcoded key is the behaviour we
     // want to encourage, and flagging it would be perverse.
-    const added = collectAddedLines(file.content, file.touchedLines);
+    const added = collectAddedLines(file);
     if (added.length === 0) continue;
 
     const hits = scanAddedLinesForSecrets(file.path, added);
@@ -92,22 +92,31 @@ export function runSecretScan(input: AnalyzerInput): AnalyzerResult & { hits: Se
 /**
  * Extract the lines this PR added.
  *
- * `touchedLines` holds new-file line numbers from the diff parser, so indexing
- * the post-change content by those numbers yields exactly the added and modified
- * lines without re-parsing the patch.
+ * Walks the content and keeps the lines whose mapped new-file position this change touched.
+ *
+ * It used to index `content` *by* the touched line numbers — `lines[lineNumber - 1]` — which is
+ * only correct when `content` is a whole file. Reconstructed content is a fragment starting at the
+ * first hunk, so for a hunk beginning at line 55 every lookup for lines 58 and up landed past the
+ * end of a 13-element array and returned undefined. The scanner then found nothing, silently, on
+ * every file whose content came from a diff. That is the normal case: a secret added inside a hunk
+ * was not detected, and the analyzer reported success.
  */
-function collectAddedLines(
-  content: string,
-  touchedLines: ReadonlySet<number>,
-): Array<{ line: number; content: string }> {
-  if (touchedLines.size === 0) return [];
+function collectAddedLines(file: AnalyzerFile): Array<{ line: number; content: string }> {
+  if (file.touchedLines.size === 0) return [];
 
-  const lines = content.split('\n');
+  const lines = file.content.split('\n');
   const result: Array<{ line: number; content: string }> = [];
 
-  for (const lineNumber of touchedLines) {
-    const text = lines[lineNumber - 1];
-    if (text !== undefined) result.push({ line: lineNumber, content: text });
+  for (const [index, text] of lines.entries()) {
+    // Absent mapping means `content` is a whole file, where index + 1 is the line number.
+    const lineNumber = file.contentLineNumbers === undefined
+      ? index + 1
+      : file.contentLineNumbers[index];
+
+    if (lineNumber === null || lineNumber === undefined) continue;
+    if (!file.touchedLines.has(lineNumber)) continue;
+
+    result.push({ line: lineNumber, content: text });
   }
 
   return result;

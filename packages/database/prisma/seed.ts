@@ -315,14 +315,9 @@ async function main(): Promise<void> {
       filename: 'src/payments/refund.service.ts',
       status: FileChangeStatus.MODIFIED,
       flags: ['PAYMENT', 'DATABASE'],
-      // The hunk starts at new-file line 55 with three context lines, so the eight added lines run
-      // 58–65. This array used to end 62, 63, 71, 72 — the last two are past the end of the hunk,
-      // so a finding anchored to them pointed at a line the fixture never shows.
-      touchedLines: [58, 59, 60, 61, 62, 63, 64, 65],
       patch: [
-        // 5 context + 3 deletions = 8 old lines; 5 context + 8 additions = 13 new lines. The header
-        // claimed 12 and 16.
-        '@@ -55,8 +55,13 @@ export class RefundService {',
+        // 5 context + 3 deletions = 8 old lines; 5 context + 14 additions = 19 new lines.
+        '@@ -55,8 +55,19 @@ export class RefundService {',
         '   async issueRefund(input: IssueRefundInput): Promise<Result<Refund, RefundError>> {',
         '     const charge = await this.charges.findById(input.chargeId);',
         '     if (!charge) return err(new RefundError("CHARGE_NOT_FOUND"));',
@@ -334,6 +329,12 @@ async function main(): Promise<void> {
         '+    }',
         '+',
         '+    const total = charge.refundedCents + input.amountCents;',
+        '+    this.logger.info("issuing refund", {',
+        '+      chargeId: charge.id,',
+        '+      total,',
+        '+      overcredit: input.allowOvercredit ?? false,',
+        '+    });',
+        '+',
         '+    await this.db.$executeRawUnsafe(',
         '+      `UPDATE charges SET refunded_cents = ${total} WHERE id = \'${charge.id}\'`,',
         '+    );',
@@ -345,11 +346,14 @@ async function main(): Promise<void> {
       filename: 'src/payments/dto/issue-refund.dto.ts',
       status: FileChangeStatus.MODIFIED,
       flags: ['PAYMENT', 'API_SURFACE'],
-      // Four added lines from new-file line 13; the blank line at 13 was missing from this list.
-      touchedLines: [13, 14, 15, 16],
       patch: [
-        // 3 context + 0 deletions = 3 old lines; 3 context + 4 additions = 7 new lines. This patch
-        // deletes nothing, though the fixture used to claim one deletion.
+        // The decorators the second hunk adds have to come from somewhere. The fixture used them
+        // without importing them, which is not a diff that would compile.
+        '@@ -1,3 +1,3 @@',
+        '-import { IsInt } from "class-validator";',
+        '+import { IsBoolean, IsInt, IsOptional } from "class-validator";',
+        ' ',
+        ' export class IssueRefundDto {',
         '@@ -11,3 +11,7 @@ export class IssueRefundDto {',
         '   @IsInt()',
         '   amountCents!: number;',
@@ -364,12 +368,14 @@ async function main(): Promise<void> {
       filename: 'prisma/migrations/20260918_add_overcredit_flag/migration.sql',
       status: FileChangeStatus.ADDED,
       flags: ['DATABASE', 'MIGRATION'],
-      touchedLines: [1, 2, 3],
       patch: [
-        // A new file: no old side, three added lines. This one was already consistent.
-        '@@ -0,0 +1,3 @@',
+        // A new file: no old side, six added lines.
+        '@@ -0,0 +1,6 @@',
         '+ALTER TABLE "charges"',
         '+  ADD COLUMN "overcredit_allowed" BOOLEAN NOT NULL DEFAULT false;',
+        '+',
+        '+-- Existing charges keep the previous behaviour.',
+        '+UPDATE "charges" SET "overcredit_allowed" = false WHERE "overcredit_allowed" IS NULL;',
         '+',
       ].join('\n'),
     },
@@ -377,18 +383,32 @@ async function main(): Promise<void> {
       filename: 'package.json',
       status: FileChangeStatus.MODIFIED,
       flags: ['DEPENDENCY'],
-      // One context line from new-file line 21, so the replacement lands on 22, not 24.
-      touchedLines: [22],
       patch: [
-        // 1 context + 1 deletion = 2 old lines; 1 context + 1 addition = 2 new lines. The header
-        // claimed 7 on each side, which would need three context lines either side of the change.
-        '@@ -21,2 +21,2 @@',
+        // Three context lines either side, which is what GitHub actually sends. The old fixture
+        // claimed `-21,7 +21,7` over a two-line body, so the header was right about the shape of a
+        // real patch and the body was the part that was missing.
+        '@@ -19,7 +19,7 @@',
+        '     "@nestjs/common": "10.4.15",',
+        '     "class-transformer": "0.5.1",',
         '     "class-validator": "0.14.1",',
         '-    "decimal.js": "10.4.3",',
         '+    "decimal.js": "10.6.0",',
+        '     "prisma": "6.2.1",',
+        '     "zod": "3.24.1"',
       ].join('\n'),
     },
-  ].map((file) => ({ ...file, ...countPatchLines(file.patch) }));
+  ].map((file) => ({ ...file, ...patchStats(file.patch) }));
+
+  // Anchors for the seeded findings, resolved out of the patches above rather than written down.
+  const refundServicePatch = fileSeeds[0]?.patch ?? '';
+  const manifestPatch = fileSeeds[3]?.patch ?? '';
+
+  const anchors = {
+    rawSql: patchLineOf(refundServicePatch, '$executeRawUnsafe('),
+    clientFlag: patchLineOf(refundServicePatch, 'input.allowOvercredit &&'),
+    recordRefund: patchLineOf(refundServicePatch, 'this.ledger.recordRefund('),
+    dependency: patchLineOf(manifestPatch, '"decimal.js"'),
+  };
 
   const diffTotals = {
     additions: fileSeeds.reduce((sum, file) => sum + file.additions, 0),
@@ -578,6 +598,10 @@ async function main(): Promise<void> {
     if (!staticAnalysisRun) throw new Error('seed: expected the static analysis tool run');
 
     // ---- static findings
+    //
+    // Lines come from `anchors`, resolved out of the patch fixtures. Naming the line by its content
+    // means extending a patch moves the finding with it instead of leaving it pointing at whatever
+    // is now at that number.
     const findingSeeds = [
       {
         analyzer: AnalyzerKind.SEMGREP,
@@ -587,7 +611,7 @@ async function main(): Promise<void> {
         message:
           'Raw SQL built with string interpolation. `charge.id` and `total` are concatenated directly into the statement, which allows SQL injection if either value is attacker-influenced.',
         path: 'src/payments/refund.service.ts',
-        line: 63,
+        line: anchors.rawSql,
         preexisting: false,
       },
       {
@@ -598,7 +622,7 @@ async function main(): Promise<void> {
         message:
           '$executeRawUnsafe bypasses the tenant-scoping extension and the statement does not filter on organizationId.',
         path: 'src/payments/refund.service.ts',
-        line: 63,
+        line: anchors.rawSql,
         preexisting: false,
       },
       {
@@ -608,9 +632,7 @@ async function main(): Promise<void> {
         category: FindingCategory.BUG,
         message: 'Promise returned by recordRefund is not awaited on the error path.',
         path: 'src/payments/refund.service.ts',
-        // 66 is the `return ok(await this.ledger.recordRefund(...))` line. 71 was past the end of
-        // the hunk, so this finding pointed at code the fixture never shows.
-        line: 66,
+        line: anchors.recordRefund,
         preexisting: false,
       },
       {
@@ -621,8 +643,7 @@ async function main(): Promise<void> {
         message:
           'decimal.js 10.6.0 changes rounding behaviour for values above 2^53. Monetary arithmetic in the ledger relies on the previous default.',
         path: 'package.json',
-        // The changed dependency line is 22 in the new file, per the patch's hunk header.
-        line: 22,
+        line: anchors.dependency,
         preexisting: false,
       },
     ];
@@ -667,12 +688,12 @@ async function main(): Promise<void> {
         filesChanged: diffTotals.changedFiles,
         commitCount: 3,
         // Complexity is estimated from the content reconstructed out of the patches; one function
-        // body changed, and its branching goes from 4 to 6.
+        // body changed, and its branching goes from 4 to 7.
         functionsChanged: 1,
         complexityBefore: 4,
-        complexityAfter: 6,
-        complexityDelta: 2,
-        maxFunctionComplexity: 4,
+        complexityAfter: 7,
+        complexityDelta: 3,
+        maxFunctionComplexity: 5,
         // Two of the seeded findings are SECURITY at HIGH or above, which is what this counts.
         securityFindingsCount: 2,
         testFilesChanged: 0,
@@ -875,7 +896,7 @@ async function main(): Promise<void> {
             explanation:
               'The UPDATE is assembled with template interpolation, placing `total` and `charge.id` directly into the statement. Use a parameterized query or the Prisma model API, which the rest of this service already uses.',
             path: 'src/payments/refund.service.ts',
-            line: 63,
+            line: anchors.rawSql,
             suggestedFix:
               'await this.db.charge.update({\n  where: { id: charge.id },\n  data: { refundedCents: total },\n});',
             evidence: [staticAnalysisRun.id],
@@ -888,7 +909,7 @@ async function main(): Promise<void> {
             explanation:
               '`input.allowOvercredit` arrives in the request body, so any caller can set it. The migration adds `charges.overcredit_allowed` for exactly this purpose — read the guard from the record, not the request.',
             path: 'src/payments/refund.service.ts',
-            line: 58,
+            line: anchors.clientFlag,
             suggestedFix:
               'if (!charge.overcreditAllowed && charge.refundedCents >= charge.amountCents) {\n  return err(new RefundError("ALREADY_REFUNDED"));\n}',
             evidence: [staticAnalysisRun.id],
@@ -913,7 +934,7 @@ async function main(): Promise<void> {
             explanation:
               'docs/architecture.md states that domain failures return `Result<T, E>` and that throwing is reserved for infrastructure errors. A raw statement that can throw mid-method breaks that contract for callers.',
             path: 'src/payments/refund.service.ts',
-            line: 63,
+            line: anchors.rawSql,
             suggestedFix: null,
             evidence: [],
             confidence: 0.71,
@@ -925,7 +946,7 @@ async function main(): Promise<void> {
             explanation:
               'The ledger relies on the previous default rounding. Confirm ledger totals are unaffected, or pin the rounding mode explicitly.',
             path: 'package.json',
-            line: 22,
+            line: anchors.dependency,
             suggestedFix: null,
             evidence: [npmAuditEvidence],
             confidence: 0.6,
@@ -1057,7 +1078,7 @@ async function main(): Promise<void> {
         authorId: reviewer.id,
         body: 'Use the Prisma model API here. We removed every raw write from this service in #298 for exactly this reason.',
         path: 'src/payments/refund.service.ts',
-        line: 63,
+        line: anchors.rawSql,
         side: 'RIGHT',
       },
     });
@@ -1070,7 +1091,7 @@ async function main(): Promise<void> {
         parentId: rootComment.id,
         body: 'Good catch, switching to charge.update. I was working around a type error on refundedCents.',
         path: 'src/payments/refund.service.ts',
-        line: 63,
+        line: anchors.rawSql,
         side: 'RIGHT',
       },
     });
@@ -1144,28 +1165,100 @@ async function main(): Promise<void> {
   console.log(`    dev@acme.dev       / ${DEMO_PASSWORD}   (DEVELOPER)\n`);
 }
 
+interface PatchLine {
+  /** Position in the post-change file. Null for a removed line. */
+  newLine: number | null;
+  added: boolean;
+  content: string;
+}
+
 /**
- * Added and removed line counts, read from the patch itself.
+ * Walk a unified patch, tracking each line's position in the post-change file.
  *
- * Every line count the demo shows traces back to these patches: the analyzer sums per-file
+ * A miniature of `parseUnifiedPatch` from `@codelens/github`. The seed is a standalone script and
+ * importing the GitHub client into it — with its HTTP layer and token handling — to read four
+ * string literals is not a trade worth making. The formats it has to agree on are the two the
+ * production parser reads: the `@@ -a,b +c,d @@` header and the one-character line markers.
+ */
+function parsePatchLines(patch: string): PatchLine[] {
+  const result: PatchLine[] = [];
+  let newLine = 0;
+
+  for (const raw of patch.split('\n')) {
+    const header = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+
+    if (header) {
+      newLine = Number(header[1]);
+      continue;
+    }
+
+    // File headers and "\ No newline at end of file" are metadata, not content.
+    if (raw.startsWith('+++') || raw.startsWith('---') || raw.startsWith('\\')) continue;
+
+    const content = raw.slice(1);
+
+    if (raw.startsWith('+')) {
+      result.push({ newLine, added: true, content });
+      newLine += 1;
+    } else if (raw.startsWith('-')) {
+      result.push({ newLine: null, added: false, content });
+    } else {
+      result.push({ newLine, added: false, content });
+      newLine += 1;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Everything about a changed file that can be read off its patch.
+ *
+ * Every line number the demo shows traces back to these patches: the analyzer sums per-file
  * additions and deletions into `linesAdded`/`linesDeleted`, and the merge gate turns those into
  * "No test file changed while N lines of code did". When the counts were written by hand beside the
  * patches they drifted from them — the pull request header claimed +96/−23 over four patches
  * holding 16 added lines, so the header and the merge gate contradicted each other on one screen.
- * Deriving them removes the possibility rather than correcting the instance.
+ *
+ * `touchedLines` is derived for the same reason, and matters more than the counts: it is what
+ * `markPreexisting` uses to decide whether a finding belongs to this change. Written by hand it
+ * listed two lines past the end of a hunk and omitted two inside it.
  */
-function countPatchLines(patch: string): { additions: number; deletions: number } {
-  let additions = 0;
-  let deletions = 0;
+function patchStats(patch: string): {
+  additions: number;
+  deletions: number;
+  touchedLines: number[];
+} {
+  const lines = parsePatchLines(patch);
+  const added = lines.filter((line) => line.added);
 
-  for (const line of patch.split('\n')) {
-    // `@@` hunk headers are excluded by the prefix checks; `+++`/`---` file headers are not.
-    if (line.startsWith('+++') || line.startsWith('---')) continue;
-    if (line.startsWith('+')) additions += 1;
-    else if (line.startsWith('-')) deletions += 1;
+  return {
+    additions: added.length,
+    deletions: lines.filter((line) => line.newLine === null).length,
+    touchedLines: added.map((line) => line.newLine as number),
+  };
+}
+
+/**
+ * The post-change line number of the line containing `needle`.
+ *
+ * Lets a seeded finding say "the `$executeRawUnsafe(` line" instead of "line 69". Hand-written
+ * anchors are the same drift problem as hand-written counts: they pointed at line 71 of a hunk that
+ * ended at 67, and at line 24 of a file whose changed line was 22.
+ *
+ * Throws rather than falling back. A fixture edit that moves the anchor out of the patch should stop
+ * the seed, not quietly relabel a finding.
+ */
+function patchLineOf(patch: string, needle: string): number {
+  const match = parsePatchLines(patch).find(
+    (line) => line.newLine !== null && line.content.includes(needle),
+  );
+
+  if (!match?.newLine) {
+    throw new Error(`seed: no line in the patch contains ${JSON.stringify(needle)}`);
   }
 
-  return { additions, deletions };
+  return match.newLine;
 }
 
 function sha256(value: string): string {

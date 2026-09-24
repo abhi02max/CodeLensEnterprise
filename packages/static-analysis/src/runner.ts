@@ -204,28 +204,72 @@ export function markPreexisting(
  * ESLint and Semgrep both flag the same unsafe pattern reasonably often. Showing
  * it twice does not make it twice as important, and it makes the report look
  * careless. The higher-severity copy wins.
+ *
+ * What must *not* collapse is two different rules from the same analyzer that happen to share a
+ * line. `raw-sql-interpolation` and `raw-sql-without-tenant-scope` both fire on one
+ * `$executeRawUnsafe(` call and describe different defects: switching to a parameterized query
+ * fixes the injection and leaves the cross-tenant read in place. Keying purely on
+ * `path:line:category` dropped one of them. That only became visible once line anchoring was
+ * correct — before, the two landed three lines apart for no better reason than the order they were
+ * emitted in, and the seeded demo findings, written by hand, put both on the same line.
+ *
+ * So the rule is: one analyzer's account of a location wins, and within that account distinct rules
+ * coexist. Different analyzers cannot coordinate rule ids, so their overlap is assumed to be the
+ * same problem; one analyzer's own rules are deliberately distinct.
  */
 export function dedupeFindings(findings: readonly StaticFinding[]): StaticFinding[] {
-  const byLocation = new Map<string, StaticFinding>();
+  // ---- exact duplicates: one analyzer reporting one rule at one place more than once
+  const byRule = new Map<string, StaticFinding>();
 
   for (const finding of findings) {
-    // Same file, same line, same category is treated as the same problem.
-    const key = `${finding.path ?? ''}:${finding.line ?? 0}:${finding.category}`;
-    const existing = byLocation.get(key);
+    const key = `${finding.path ?? ''}:${finding.line ?? 0}:${finding.category}:${finding.analyzer}:${finding.ruleId}`;
+    const existing = byRule.get(key);
 
-    if (!existing) {
-      byLocation.set(key, finding);
+    if (!existing || SEVERITY_RANK[finding.severity] > SEVERITY_RANK[existing.severity]) {
+      byRule.set(key, finding);
+    }
+  }
+
+  // ---- cross-analyzer overlap: keep a single analyzer's account of each location
+  const byLocation = new Map<string, StaticFinding[]>();
+
+  for (const finding of byRule.values()) {
+    const key = `${finding.path ?? ''}:${finding.line ?? 0}:${finding.category}`;
+    const group = byLocation.get(key);
+
+    if (group) group.push(finding);
+    else byLocation.set(key, [finding]);
+  }
+
+  const kept: StaticFinding[] = [];
+
+  for (const group of byLocation.values()) {
+    const analyzers = [...new Set(group.map((finding) => finding.analyzer))];
+
+    if (analyzers.length === 1) {
+      kept.push(...group);
       continue;
     }
 
-    if (SEVERITY_RANK[finding.severity] > SEVERITY_RANK[existing.severity]) {
-      byLocation.set(key, finding);
-    }
+    // The analyzer that reported the most severe thing about this location describes it. Ties go to
+    // whichever ran first, which is fixed by the order analyzers are pushed in runStaticAnalysis.
+    const severityOf = (analyzer: StaticFinding['analyzer']): number =>
+      Math.max(
+        ...group
+          .filter((finding) => finding.analyzer === analyzer)
+          .map((finding) => SEVERITY_RANK[finding.severity]),
+      );
+
+    const winner = analyzers.reduce((best, analyzer) =>
+      severityOf(analyzer) > severityOf(best) ? analyzer : best,
+    );
+
+    kept.push(...group.filter((finding) => finding.analyzer === winner));
   }
 
   // Stable ordering: severity first, then file and line, so the report reads
   // predictably rather than in analyzer-completion order.
-  return [...byLocation.values()].sort((a, b) => {
+  return kept.sort((a, b) => {
     const bySeverity = SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity];
     if (bySeverity !== 0) return bySeverity;
 

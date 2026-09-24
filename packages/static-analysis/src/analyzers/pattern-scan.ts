@@ -7,7 +7,7 @@ import {
   type StaticFinding,
 } from '@codelens/shared';
 import { fingerprintFinding } from '../sandbox';
-import type { AnalyzerInput } from '../types';
+import type { AnalyzerFile, AnalyzerInput } from '../types';
 
 /**
  * In-process pattern analyzer for partial file content.
@@ -172,6 +172,23 @@ const RULES: readonly PatternRule[] = [
 /** Lines of surrounding context used to evaluate multi-line confirmations. */
 const WINDOW_LINES = 4;
 
+/**
+ * New-file line number for a line of reconstructed content.
+ *
+ * `content` is usually a fragment assembled from diff hunks, so its indices are local to the
+ * fragment and are not line numbers. `contentLineNumbers` carries the real position of each line,
+ * built by the diff parser, which is the only place the information exists.
+ *
+ * Returns null when the position is genuinely unknown, which makes the finding file-level rather
+ * than pointing at a line picked for being arithmetically available.
+ */
+function resolveLine(file: AnalyzerFile, index: number): number | null {
+  // No mapping means `content` is a whole file, where the index already is the line number.
+  if (file.contentLineNumbers === undefined) return index + 1;
+
+  return file.contentLineNumbers[index] ?? null;
+}
+
 export function runPatternScan(input: AnalyzerInput): AnalyzerResult {
   const startedAt = Date.now();
   const findings: StaticFinding[] = [];
@@ -184,9 +201,6 @@ export function runPatternScan(input: AnalyzerInput): AnalyzerResult {
     const lines = file.content.split('\n');
 
     for (const [index, line] of lines.entries()) {
-      // Only lines this pull request touched, so the author is not charged for inherited code.
-      // `content` is reconstructed from the diff, so its indices are local to the fragment;
-      // the touched-line set is applied by markPreexisting downstream using the real numbers.
       if (line.trim().length === 0 || line.length > 2000) continue;
 
       const window = lines
@@ -198,11 +212,17 @@ export function runPatternScan(input: AnalyzerInput): AnalyzerResult {
         if (!rule.pattern.test(line)) continue;
         if (rule.confirm && !rule.confirm(line, window)) continue;
 
-        // Resolve the fragment-local index back to a real file line where possible: the touched
-        // line set is ordered, so the nth added line of the fragment corresponds to the nth
-        // touched line. Falls back to the fragment index.
-        const touched = [...file.touchedLines].sort((a, b) => a - b);
-        const resolvedLine = touched[findings.length] ?? touched[0] ?? index + 1;
+        // The line the pattern actually matched, mapped back through the hunk.
+        //
+        // This used to be `touchedLines[findings.length]` — the sorted touched-line set indexed by
+        // the number of findings emitted *so far, across all files*. It was wrong in three
+        // independent ways: the counter has nothing to do with which line matched, it kept
+        // incrementing across file boundaries so a finding in one file renumbered findings in the
+        // next, and two rules matching the same line got different numbers. On the demo pull
+        // request it put a SQL-injection finding on line 60, three lines above the `$executeRawUnsafe`
+        // call it was describing. Which line is scoped to the change is a separate question, and
+        // `markPreexisting` answers it downstream using these numbers.
+        const resolvedLine = resolveLine(file, index);
 
         findings.push({
           id: '',
