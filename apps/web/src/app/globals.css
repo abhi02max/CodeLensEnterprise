@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-surface-subtle text-slate-900 antialiased;
+  }
+
+  /*
+   * Visible focus everywhere, not just where it was remembered.
+   *
+   * The whole demo flow is reachable by keyboard, and a review tool is used with hands on the
+   * keyboard, so removing the default outline without replacing it would be a real regression
+   * rather than a cosmetic one.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-slate-900 ring-offset-2 ring-offset-white;
+  }
+
+  ::selection {
+    @apply bg-slate-900 text-white;
+  }
+}
+
+@layer utilities {
+  /* Tabular figures so counts and scores do not jitter as they update. */
+  .numeric {
+    font-variant-numeric: tabular-nums;
+  }
+}

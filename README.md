@@ -183,6 +183,7 @@ Scopes requested: `read:user`, `user:email` for identity and `repo` for private 
 | `pnpm --filter @codelens/api worker` | dedicated background worker process |
 | `pwsh -File apps/api/test/verify-review-sessions.ps1` | review workspace regression suite |
 | `pwsh -File apps/api/test/verify-ai-review.ps1` | AI review path regression suite |
+| `pwsh -File apps/web/test/verify-web-flow.ps1` | web MVP contract + route suite |
 
 Analysis, repository indexing and organization-wide GitHub sync are queued, not inline. In
 development `RUN_WORKERS_IN_API=true` runs the consumers inside the API. In production set it
@@ -228,9 +229,15 @@ What that verification did and did not cover, precisely:
   equivalent) and re-run `apps/api/test/verify-ai-review.ps1 -Section enabled`; the assertions
   check structure, evidence grounding and policy handling, but judging the prose is a human job.
 
-Remaining gap: **`apps/web` does not exist yet.** The API and its OpenAPI document are the only
-interface.
+`apps/web` now covers one demo flow end to end against the real API: **sign in → repository → pull
+request → analyze → review → comment / verdict / share**, plus a read-only shared-review route that
+needs no authentication. The build passes, every route serves, and every API contract the screens
+consume is asserted at field level in both AI configurations (84 assertions). Browser interaction
+itself is not covered by those assertions.
 
-See the implementation blueprint for the phase-by-phase plan, and
-[apps/api/README.md](apps/api/README.md) for the AI review contract and the verification
-harnesses.
+Deliberately not built yet: settings, billing, onboarding, analytics charts, and a landing page.
+
+See the implementation blueprint for the phase-by-phase plan,
+[apps/api/README.md](apps/api/README.md) for the AI review contract and backend harnesses, and
+[apps/web/README.md](apps/web/README.md) for the frontend's auth model and what it refuses to
+render.

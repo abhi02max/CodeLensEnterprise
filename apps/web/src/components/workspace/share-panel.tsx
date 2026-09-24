@@ -1,0 +1,245 @@
+'use client';
+
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import * as React from 'react';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Input,
+  Label,
+  Select,
+} from '@/components/ui/primitives';
+import { api } from '@/lib/api';
+import { ApiError } from '@/lib/api-client';
+import { absoluteTime, relativeTime } from '@/lib/format';
+import type { ReviewPermissions, ShareLinkView } from '@/lib/types';
+
+/**
+ * Share-link management.
+ *
+ * The created URL is shown once and never again, because only its sha256 is stored server-side.
+ * That constraint is surfaced rather than hidden: the panel says so, and existing links list with
+ * no URL, so nobody expects to come back later and copy it.
+ */
+export function SharePanel({
+  sessionId,
+  shareLinks,
+  permissions,
+}: {
+  sessionId: string;
+  shareLinks: ShareLinkView[];
+  permissions: ReviewPermissions;
+}) {
+  const queryClient = useQueryClient();
+
+  const [open, setOpen] = React.useState(false);
+  const [scope, setScope] = React.useState<'SUMMARY' | 'FULL'>('FULL');
+  const [hours, setHours] = React.useState(168);
+  const [redactCode, setRedactCode] = React.useState(false);
+  const [passphrase, setPassphrase] = React.useState('');
+  const [created, setCreated] = React.useState<{ url: string; token: string } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.createShareLink(sessionId, {
+        scope,
+        expiresInHours: hours,
+        redactCode,
+        ...(passphrase.trim().length >= 8 ? { passphrase: passphrase.trim() } : {}),
+      }),
+    onMutate: () => setError(null),
+    onSuccess: (link) => {
+      setCreated({ url: link.url, token: link.token });
+      setPassphrase('');
+      void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
+    },
+    onError: (caught) =>
+      setError(caught instanceof ApiError ? caught.message : 'Could not create the share link'),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (shareLinkId: string) => api.revokeShareLink(sessionId, shareLinkId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] }),
+    onError: (caught) =>
+      setError(caught instanceof ApiError ? caught.message : 'Could not revoke the link'),
+  });
+
+  const active = shareLinks.filter((link) => !link.revokedAt);
+
+  if (!permissions.canCreateShareLink) {
+    return (
+      <Card>
+        <CardHeader title="Share" />
+        <CardBody>
+          <p className="text-xs text-slate-500">
+            {permissions.deniedReasons.canCreateShareLink ??
+              'Your role does not allow sharing this review externally.'}
+          </p>
+          {active.length > 0 && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              {active.length} active share link{active.length === 1 ? '' : 's'} exist for this review.
+            </p>
+          )}
+        </CardBody>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Share"
+        subtitle={`${active.length} active link${active.length === 1 ? '' : 's'}`}
+        actions={
+          <Button size="sm" onClick={() => setOpen((value) => !value)}>
+            {open ? 'Close' : 'New link'}
+          </Button>
+        }
+      />
+
+      {open && (
+        <div className="space-y-2.5 border-b border-surface-border px-4 py-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="share-scope">Scope</Label>
+              <Select
+                id="share-scope"
+                className="mt-1 w-full"
+                value={scope}
+                onChange={(event) => setScope(event.target.value as 'SUMMARY' | 'FULL')}
+              >
+                <option value="SUMMARY">Summary — risk and counts</option>
+                <option value="FULL">Full — findings and narrative</option>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="share-hours">Expires in</Label>
+              <Select
+                id="share-hours"
+                className="mt-1 w-full"
+                value={hours}
+                onChange={(event) => setHours(Number(event.target.value))}
+              >
+                <option value={24}>24 hours</option>
+                <option value={168}>7 days</option>
+                <option value={720}>30 days</option>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="share-passphrase">Passphrase (optional, min 8 characters)</Label>
+            <Input
+              id="share-passphrase"
+              type="text"
+              className="mt-1"
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.target.value)}
+              placeholder="Leave blank for no passphrase"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-slate-700">
+            <input
+              type="checkbox"
+              checked={redactCode}
+              onChange={(event) => setRedactCode(event.target.checked)}
+              className="h-3.5 w-3.5 rounded border-surface-border"
+            />
+            Redact source snippets
+          </label>
+
+          {error && <Alert tone="danger">{error}</Alert>}
+
+          <Button variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
+            Create link
+          </Button>
+
+          {created && (
+            <Alert tone="info" title="Copy this now — it cannot be shown again">
+              <div className="mt-1 flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded bg-white px-2 py-1 font-mono text-xs text-slate-800">
+                  {created.url}
+                </code>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(created.url).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    });
+                  }}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs">
+                Only a hash of the token is stored, so this URL is unrecoverable. Anyone holding it
+                can read the review until it expires or is revoked.
+              </p>
+              <a
+                href={`/shared/${created.token}`}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="mt-1 inline-block text-xs underline"
+              >
+                Open the shared view
+              </a>
+            </Alert>
+          )}
+        </div>
+      )}
+
+      {shareLinks.length > 0 && (
+        <ul className="divide-y divide-surface-border">
+          {shareLinks.map((link) => {
+            const expired = new Date(link.expiresAt).getTime() < Date.now();
+
+            return (
+              <li key={link.id} className="flex items-start justify-between gap-2 px-4 py-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone="outline">{link.scope.toLowerCase()}</Badge>
+                    {link.hasPassphrase && <Badge tone="neutral">passphrase</Badge>}
+                    {link.redactCode && <Badge tone="neutral">redacted</Badge>}
+                    {link.revokedAt ? (
+                      <Badge tone="danger">revoked</Badge>
+                    ) : expired ? (
+                      <Badge tone="warning">expired</Badge>
+                    ) : (
+                      <Badge tone="success">active</Badge>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    by {link.createdBy.name} · {link.viewCount} view
+                    {link.viewCount === 1 ? '' : 's'} ·{' '}
+                    {link.revokedAt
+                      ? `revoked ${relativeTime(link.revokedAt)}`
+                      : `expires ${absoluteTime(link.expiresAt)}`}
+                  </p>
+                </div>
+
+                {!link.revokedAt && permissions.canRevokeShareLink && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    loading={revoke.isPending}
+                    onClick={() => revoke.mutate(link.id)}
+                  >
+                    Revoke
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
