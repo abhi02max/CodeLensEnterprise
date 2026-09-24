@@ -1,0 +1,39 @@
+[project]
+name = "codelens-ml-service"
+version = "0.1.0"
+description = "Pull request risk prediction, review time estimation and issue pattern analysis"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["artifacts", "data", ".venv"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle
+  "F",   # pyflakes
+  "I",   # isort
+  "UP",  # pyupgrade
+  "B",   # bugbear
+  "SIM", # simplify
+  "RUF",
+]
+ignore = [
+  # Long lines inside explanatory comments are intentional; the line-length limit
+  # applies to code.
+  "E501",
+  # The scripts deliberately print progress rather than using a logger.
+  "T201",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Training and generation scripts import after sys.path manipulation, which is the
+# standard pattern for a script that needs its own package importable.
+"scripts/*.py" = ["E402"]
+"tests/*.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"

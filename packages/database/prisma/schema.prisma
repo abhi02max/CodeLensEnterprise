@@ -1,0 +1,1118 @@
+// CodeLens Enterprise — data model
+//
+// Conventions used throughout:
+//   * cuid() primary keys, `id` column name
+//   * every tenant-scoped table carries `organizationId` and is indexed on it;
+//     a Prisma extension enforces the filter so a forgotten `where` cannot leak
+//     across tenants
+//   * timestamps are `createdAt` / `updatedAt`, UTC
+//   * enums mirror packages/shared/src/enums.ts literal-for-literal
+//   * cascade deletes flow from Organization down, so removing a tenant removes
+//     every artifact belonging to it
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pg_trgm, pgcrypto]
+}
+
+// ===========================================================================
+// Identity & tenancy
+// ===========================================================================
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  // Null for users who only ever signed in through GitHub OAuth.
+  passwordHash String?
+  name         String
+  avatarUrl    String?
+  timezone     String  @default("UTC")
+
+  // Bumped on password change or explicit session revocation. The JWT carries
+  // this value, so stale access tokens stop validating without a token blocklist.
+  tokenGeneration Int @default(0)
+
+  emailVerifiedAt DateTime?
+  lastActiveAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts        Account[]
+  memberships     Membership[]
+  teamMemberships TeamMember[]
+  sentInvites     Invite[]         @relation("InviteSender")
+  reviews         Review[]
+  comments        Comment[]
+  resolvedComments Comment[]       @relation("CommentResolver")
+  auditLogs       AuditLog[]
+  triggeredRuns   ReviewRun[]
+  shareLinks      ShareLink[]
+  apiKeys         ApiKey[]
+  authoredPrs     PullRequest[]    @relation("PrAuthor")
+
+  @@index([lastActiveAt])
+}
+
+/// OAuth provider linkage. Kept separate from User so one account can add more
+/// providers later (GitLab, Bitbucket) without schema churn.
+model Account {
+  id         String @id @default(cuid())
+  userId     String
+  provider   String // "github"
+  providerAccountId String
+  providerLogin     String?
+
+  // AES-256-GCM ciphertext, never the raw token. Format: iv:authTag:ciphertext.
+  // The API refuses to boot without ENCRYPTION_KEY, so this is never plaintext.
+  accessTokenEncrypted  String? @db.Text
+  refreshTokenEncrypted String? @db.Text
+  tokenExpiresAt        DateTime?
+  scopes                String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Organization {
+  id        String  @id @default(cuid())
+  name      String
+  slug      String  @unique
+  avatarUrl String?
+  plan      String  @default("free")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  Membership[]
+  teams        Team[]
+  invites      Invite[]
+  repositories Repository[]
+  policy       ReviewPolicy?
+  aiSettings   AiSettings?
+  auditLogs    AuditLog[]
+  apiKeys      ApiKey[]
+
+  @@index([slug])
+}
+
+enum Role {
+  DEVELOPER
+  REVIEWER
+  ADMIN
+  OWNER
+}
+
+model Membership {
+  id             String @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role   @default(DEVELOPER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model Team {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      TeamMember[]
+  repositories RepositoryTeam[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  teamId String
+  userId String
+
+  createdAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model Invite {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  role           Role      @default(DEVELOPER)
+  // sha256 of the token; the raw value only ever exists in the invite email.
+  tokenHash      String    @unique
+  invitedById    String
+  teamIds        String[]  @default([])
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InviteSender", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, email])
+  @@index([expiresAt])
+}
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  organizationId String
+  createdById    String
+  name           String
+  // Display-only prefix; the full key is shown once at creation.
+  prefix         String
+  keyHash        String    @unique
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// ===========================================================================
+// Governance
+// ===========================================================================
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+/// Per-organization review policy. Defaults are permissive on purpose: a tool
+/// that blocks merges on install day gets uninstalled on day two.
+model ReviewPolicy {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  blockingSeverity                  Severity @default(HIGH)
+  riskScoreGate                     Int      @default(70)
+  requireTestsForCodeChanges        Boolean  @default(true)
+  minApprovals                      Int      @default(1)
+  sensitiveFlagsRequireTwoApprovals Boolean  @default(true)
+  autoPostGithubComment             Boolean  @default(false)
+  blockOnSecretDetection            Boolean  @default(true)
+  githubCommentMinRole              Role     @default(REVIEWER)
+
+  checklist             String[] @default([])
+  extraSemgrepRulesets  String[] @default([])
+  excludePatterns       String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+enum AiProviderKind {
+  OPENAI
+  ANTHROPIC
+  OPENROUTER
+}
+
+model AiSettings {
+  id             String @id @default(cuid())
+  organizationId String @unique
+
+  provider           AiProviderKind @default(OPENAI)
+  model              String         @default("gpt-4o-mini")
+  temperature        Float          @default(0.2)
+  maxOutputTokens    Int            @default(8000)
+  maxCostCentsPerRun Int            @default(50)
+
+  // When false the diff never leaves the deployment; reviews degrade to static
+  // analysis plus ML. Some organizations cannot adopt the product without this.
+  allowExternalModelCalls Boolean @default(true)
+  redactSecretsBeforeSend Boolean @default(true)
+
+  embeddingProvider String @default("openai")
+  embeddingModel    String @default("text-embedding-3-small")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ===========================================================================
+// Repositories & pull requests
+// ===========================================================================
+
+enum IndexStatus {
+  NOT_INDEXED
+  QUEUED
+  INDEXING
+  INDEXED
+  FAILED
+  STALE
+}
+
+model Repository {
+  id             String @id @default(cuid())
+  organizationId String
+
+  githubId        Int
+  fullName        String
+  name            String
+  owner           String
+  description     String?
+  private         Boolean @default(false)
+  defaultBranch   String  @default("main")
+  primaryLanguage String?
+  htmlUrl         String?
+
+  indexStatus       IndexStatus @default(NOT_INDEXED)
+  indexedAt         DateTime?
+  indexError        String?     @db.Text
+  indexedChunkCount Int         @default(0)
+  // Commit the current index was built from; enables incremental re-indexing.
+  indexedCommitSha  String?
+
+  lastSyncedAt DateTime?
+  connectedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pullRequests PullRequest[]
+  chunks       RagChunk[]
+  teams        RepositoryTeam[]
+  indexRuns    IndexRun[]
+
+  // A GitHub repo can be connected by more than one organization.
+  @@unique([organizationId, githubId])
+  @@index([organizationId, fullName])
+  @@index([indexStatus])
+}
+
+model RepositoryTeam {
+  id           String @id @default(cuid())
+  repositoryId String
+  teamId       String
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, teamId])
+  @@index([teamId])
+}
+
+enum PullRequestState {
+  OPEN
+  CLOSED
+  MERGED
+  DRAFT
+}
+
+model PullRequest {
+  id             String @id @default(cuid())
+  organizationId String
+  repositoryId   String
+
+  number  Int
+  title   String
+  body    String? @db.Text
+  state   PullRequestState @default(OPEN)
+  draft   Boolean          @default(false)
+  htmlUrl String
+
+  authorLogin     String
+  authorAvatarUrl String?
+  // Set when the GitHub login resolves to a CodeLens user.
+  authorUserId    String?
+
+  headRef String
+  headSha String
+  baseRef String
+  baseSha String
+
+  additions    Int @default(0)
+  deletions    Int @default(0)
+  changedFiles Int @default(0)
+  commitCount  Int @default(0)
+
+  mergeable Boolean?
+  merged    Boolean   @default(false)
+  mergedAt  DateTime?
+  closedAt  DateTime?
+  labels    String[]  @default([])
+
+  githubCreatedAt DateTime
+  githubUpdatedAt DateTime
+
+  // Denormalized from the latest completed run so the PR list can sort and
+  // filter on risk without joining through ReviewRun -> MlPrediction.
+  latestRiskScore Int?
+  latestRiskLevel RiskLevel?
+
+  // Actual minutes from PR open to first human review. This is the training
+  // label for the review-time regression model.
+  firstReviewedAt      DateTime?
+  actualReviewMinutes  Int?
+
+  // Training label for the risk classifier, derived passively: true when the PR
+  // received CHANGES_REQUESTED, was reverted, or was followed by a hotfix
+  // touching the same files inside 7 days.
+  wasRisky        Boolean?
+  riskLabelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repository Repository        @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  author     User?             @relation("PrAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  files      PullRequestFile[]
+  commits    Commit[]
+  runs       ReviewRun[]
+  reviews    Review[]
+  comments   Comment[]
+  shareLinks ShareLink[]
+
+  @@unique([repositoryId, number])
+  @@index([organizationId, state, githubUpdatedAt(sort: Desc)])
+  @@index([repositoryId, state, githubUpdatedAt(sort: Desc)])
+  @@index([organizationId, latestRiskLevel])
+  @@index([authorLogin])
+  @@index([wasRisky])
+}
+
+enum FileChangeStatus {
+  ADDED
+  MODIFIED
+  REMOVED
+  RENAMED
+  COPIED
+  CHANGED
+  UNCHANGED
+}
+
+model PullRequestFile {
+  id            String @id @default(cuid())
+  pullRequestId String
+
+  filename         String
+  previousFilename String?
+  status           FileChangeStatus
+  additions        Int              @default(0)
+  deletions        Int              @default(0)
+  changes          Int              @default(0)
+  language         String           @default("unknown")
+
+  // FileFlag literals from shared/enums (TEST, AUTH, DATABASE, ...). Stored as
+  // a string array rather than an enum array so adding a flag needs no migration.
+  flags String[] @default([])
+
+  // Unified diff. Null for binary files or patches over the size cap.
+  patch          String? @db.Text
+  patchTruncated Boolean @default(false)
+  binary         Boolean @default(false)
+
+  // Line numbers this PR touched, used to mark findings as pre-existing.
+  touchedLines Int[] @default([])
+
+  createdAt DateTime @default(now())
+
+  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, filename])
+  @@index([pullRequestId])
+  @@index([filename])
+}
+
+model Commit {
+  id            String @id @default(cuid())
+  pullRequestId String
+
+  sha         String
+  message     String  @db.Text
+  authorName  String
+  authorEmail String?
+  authorLogin String?
+  authoredAt  DateTime
+  additions   Int?
+  deletions   Int?
+
+  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, sha])
+  @@index([pullRequestId])
+}
+
+// ===========================================================================
+// Analysis pipeline
+// ===========================================================================
+
+enum ReviewRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  PARTIAL
+}
+
+enum ReviewStage {
+  PENDING
+  FETCHING_DIFF
+  STATIC_ANALYSIS
+  FEATURE_EXTRACTION
+  RISK_PREDICTION
+  CONTEXT_RETRIEVAL
+  AI_REVIEW
+  TEST_SUGGESTIONS
+  REPORT_ASSEMBLY
+  PUBLISHING
+  DONE
+}
+
+enum RunTrigger {
+  USER
+  WEBHOOK
+  SCHEDULE
+  API
+}
+
+/// One execution of the review pipeline. The unit of work, the unit of cost, and
+/// the parent of every artifact a review produces.
+model ReviewRun {
+  id             String @id @default(cuid())
+  organizationId String
+  pullRequestId  String
+
+  status ReviewRunStatus @default(QUEUED)
+  stage  ReviewStage     @default(PENDING)
+
+  trigger           RunTrigger @default(USER)
+  triggeredByUserId String?
+
+  // Idempotency: (pullRequestId, headSha, promptVersion, featureSchemaVersion)
+  // identifies an equivalent run, so re-requesting a review is free.
+  headSha              String
+  promptVersion        String
+  featureSchemaVersion Int    @default(1)
+  idempotencyKey       String
+
+  error      String? @db.Text
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+
+  promptTokens     Int @default(0)
+  completionTokens Int @default(0)
+  costCents        Int @default(0)
+
+  // Which optional layers produced results. Lets the UI say "risk unavailable"
+  // instead of silently showing a review with a missing section.
+  hadStaticAnalysis Boolean @default(false)
+  hadMlRisk         Boolean @default(false)
+  hadRagContext     Boolean @default(false)
+  hadAiReview       Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pullRequest     PullRequest      @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  triggeredBy     User?            @relation(fields: [triggeredByUserId], references: [id], onDelete: SetNull)
+  toolRuns        ToolRun[]
+  findings        StaticFinding[]
+  metrics         PrMetrics?
+  mlPrediction    MlPrediction?
+  aiReview        AiReview?
+  retrievedChunks RetrievedContext[]
+
+  @@unique([idempotencyKey])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([pullRequestId, createdAt(sort: Desc)])
+  @@index([status, stage])
+}
+
+enum ToolRunStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
+  TIMED_OUT
+}
+
+/// One MCP-style tool invocation.
+///
+/// This table is the audit spine of the agent: AI findings cite ToolRun ids as
+/// evidence, and the report and RAG viewer pages render from these rows. Without
+/// it, "the AI said so" is the only justification available.
+model ToolRun {
+  id          String @id @default(cuid())
+  reviewRunId String
+
+  tool     String // ToolName literal, e.g. "run_static_analysis"
+  status   ToolRunStatus @default(SUCCESS)
+  sequence Int
+
+  input  Json
+  output Json?
+  error  String? @db.Text
+
+  durationMs Int      @default(0)
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+
+  promptTokens     Int?
+  completionTokens Int?
+  costCents        Int      @default(0)
+  cacheHit         Boolean  @default(false)
+
+  reviewRun ReviewRun       @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+  findings  StaticFinding[]
+
+  @@unique([reviewRunId, sequence])
+  @@index([reviewRunId])
+  @@index([tool, status])
+}
+
+enum AnalyzerKind {
+  ESLINT
+  SEMGREP
+  NPM_AUDIT
+  TSC
+  METRICS
+  SECRET_SCAN
+  /// Built-in pattern analyzer; works on partial diff content where Semgrep cannot parse.
+  PATTERN_SCAN
+}
+
+enum FindingCategory {
+  BUG
+  SECURITY
+  PERFORMANCE
+  MAINTAINABILITY
+  TESTING
+  STYLE
+  DEPENDENCY
+  TYPE_SAFETY
+}
+
+model StaticFinding {
+  id             String @id @default(cuid())
+  organizationId String
+  reviewRunId    String
+  // The tool invocation that produced this. Required: a finding without
+  // provenance cannot be audited.
+  sourceToolRunId String
+
+  analyzer AnalyzerKind
+  ruleId   String
+  severity Severity
+  category FindingCategory
+  message  String          @db.Text
+
+  path     String?
+  line     Int?
+  endLine  Int?
+  column   Int?
+  helpUrl  String?
+  snippet  String? @db.Text
+
+  // sha256 of (analyzer, ruleId, path, normalized message). Deduplicates across
+  // runs and matches findings the team already dismissed.
+  fingerprint String
+  // True when the finding sits on a line this PR did not touch.
+  preexisting Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  reviewRun     ReviewRun @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+  sourceToolRun ToolRun   @relation(fields: [sourceToolRunId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewRunId, fingerprint])
+  @@index([organizationId, severity, createdAt(sort: Desc)])
+  @@index([reviewRunId, preexisting])
+  @@index([ruleId])
+  @@index([path])
+}
+
+/// Dismissals are signal, not just UI state: a rule dismissed repeatedly across
+/// an organization gets suppressed, which is how the tool stops being noisy.
+model DismissedFinding {
+  id             String @id @default(cuid())
+  organizationId String
+  fingerprint    String
+  ruleId         String
+  dismissedById  String
+  reason         String // FALSE_POSITIVE | ACCEPTED_RISK | OUT_OF_SCOPE | ALREADY_TRACKED
+  note           String?
+  pullRequestId  String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([organizationId, fingerprint])
+  @@index([organizationId, ruleId])
+}
+
+/// The persisted ML feature vector.
+///
+/// Stored per run so models can be retrained on real history and so a past
+/// prediction stays reproducible from its exact inputs.
+model PrMetrics {
+  id          String @id @default(cuid())
+  reviewRunId String @unique
+
+  linesAdded   Int @default(0)
+  linesDeleted Int @default(0)
+  filesChanged Int @default(0)
+  commitCount  Int @default(0)
+
+  functionsChanged      Int   @default(0)
+  complexityBefore      Int   @default(0)
+  complexityAfter       Int   @default(0)
+  complexityDelta       Int   @default(0)
+  maxFunctionComplexity Int   @default(0)
+
+  securityFindingsCount Int @default(0)
+  testFilesChanged      Int @default(0)
+  testToCodeRatio       Float @default(0)
+
+  dependencyChanged   Boolean @default(false)
+  authFileChanged     Boolean @default(false)
+  databaseFileChanged Boolean @default(false)
+  configFileChanged   Boolean @default(false)
+  paymentFileChanged  Boolean @default(false)
+  infraFileChanged    Boolean @default(false)
+
+  previousRiskyFileCount Int @default(0)
+
+  // Raw text fed to TF-IDF in the ML service. Kept so vectorizers can be
+  // refitted without refetching from GitHub.
+  titleText  String @db.Text
+  commitText String @db.Text
+
+  featureSchemaVersion Int @default(1)
+
+  createdAt DateTime @default(now())
+
+  reviewRun ReviewRun @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MlStatus {
+  OK
+  UNAVAILABLE
+  DEGRADED
+}
+
+model MlPrediction {
+  id             String @id @default(cuid())
+  organizationId String
+  reviewRunId    String @unique
+
+  status         MlStatus @default(OK)
+  degradedReason String?
+
+  riskScore   Int       @default(0)
+  riskLevel   RiskLevel @default(LOW)
+  probability Float     @default(0)
+  confidence  Float     @default(0)
+  // True when a documented heuristic baseline produced this rather than a model
+  // fitted on real review history. Surfaced in the UI so nobody over-trusts it.
+  isBaseline  Boolean   @default(true)
+
+  predictedReviewTimeMinutes Float?
+  reviewTimeLowerMinutes     Float?
+  reviewTimeUpperMinutes     Float?
+
+  // SHAP attributions: [{ feature, label, value, contribution, direction, explanation }]
+  topRiskReasons Json @default("[]")
+  // KNN neighbours resolved back to PullRequest rows where possible.
+  similarPullRequests Json @default("[]")
+  // KMeans issue-pattern clusters for this PR's findings.
+  issueClusters Json @default("[]")
+
+  modelName            String @default("baseline")
+  modelVersion         String @default("bootstrap-v1")
+  featureSchemaVersion Int    @default(1)
+
+  createdAt DateTime @default(now())
+
+  reviewRun ReviewRun @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, riskLevel, createdAt(sort: Desc)])
+}
+
+enum ApprovalRecommendation {
+  APPROVE
+  REQUEST_CHANGES
+  NEEDS_DISCUSSION
+}
+
+model AiReview {
+  id             String @id @default(cuid())
+  organizationId String
+  reviewRunId    String @unique
+
+  executiveSummary        String @db.Text
+  technicalSummary        String @db.Text
+  beginnerExplanation     String @db.Text
+  recommendationRationale String @db.Text
+
+  // What the model concluded.
+  modelRecommendation ApprovalRecommendation
+  // What policy reconciliation settled on. These differ when a CRITICAL finding
+  // survived validation but the model still wanted to approve.
+  effectiveRecommendation ApprovalRecommendation
+  policyOverridden        Boolean  @default(false)
+  policyReasons           String[] @default([])
+
+  confidence Float @default(0)
+
+  // Validated structured payloads. Schemas live in shared/contracts/ai-review.ts
+  // and are applied before any of this is written.
+  fileExplanations  Json @default("[]")
+  findings          Json @default("[]")
+  missingTests      Json @default("[]")
+  suggestedTestCases Json @default("[]")
+  reviewerChecklist Json @default("[]")
+  openQuestions     Json @default("[]")
+
+  // Findings removed by the evidence filter. Kept as a count for admin
+  // observability into how noisy the current model and prompt are.
+  droppedFindingCount Int     @default(0)
+  usedMapReduce       Boolean @default(false)
+
+  provider      String
+  model         String
+  promptVersion String
+
+  promptTokens     Int @default(0)
+  completionTokens Int @default(0)
+  costCents        Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  reviewRun ReviewRun @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+}
+
+// ===========================================================================
+// RAG
+// ===========================================================================
+
+enum ChunkKind {
+  FILE
+  FUNCTION
+  CLASS
+  METHOD
+  INTERFACE
+  ROUTE
+  SCHEMA_MODEL
+  TEST_CASE
+  DOC_SECTION
+  CONFIG_BLOCK
+}
+
+/// An embedded slice of the repository.
+///
+/// The `embedding` column is Unsupported because Prisma has no native vector
+/// type. All similarity search goes through raw SQL in the pgvector store
+/// implementation; the ivfflat index is created in a migration.
+model RagChunk {
+  id             String @id @default(cuid())
+  organizationId String
+  repositoryId   String
+
+  path      String
+  symbol    String?
+  kind      ChunkKind @default(FILE)
+  language  String    @default("unknown")
+  content   String    @db.Text
+  startLine Int       @default(1)
+  endLine   Int       @default(1)
+  tokenCount Int      @default(0)
+
+  // sha256 of content. Unchanged hash on re-index means skip the embedding call,
+  // which is the single biggest cost saving in the pipeline.
+  contentHash String
+
+  // imports, exports, route, linkedTestPath, parentSymbol, docComment, isPartial
+  metadata Json @default("{}")
+
+  embedding      Unsupported("vector(1536)")?
+  embeddingModel String @default("text-embedding-3-small")
+
+  // Generated tsvector for the lexical half of hybrid retrieval. Vector search
+  // alone misses exact identifier matches; BM25 alone misses paraphrase.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, path, symbol, contentHash])
+  @@index([repositoryId, path])
+  @@index([organizationId])
+  @@index([contentHash])
+}
+
+/// Snapshot of what retrieval actually returned for a run.
+///
+/// Persisted rather than recomputed so the RAG Context Viewer shows the context
+/// the AI genuinely saw, even after the repository is re-indexed.
+model RetrievedContext {
+  id          String @id @default(cuid())
+  reviewRunId String
+
+  // File the context was retrieved for. Null for repository-level overview.
+  forFilePath String?
+  chunkId     String
+  path        String
+  symbol      String?
+  kind        ChunkKind
+  content     String  @db.Text
+  startLine   Int
+  endLine     Int
+  tokenCount  Int
+
+  score        Float
+  vectorScore  Float?
+  lexicalScore Float?
+  // RetrievalSource literals: VECTOR, LEXICAL, IMPORT_GRAPH, CONVENTION
+  sources      String[] @default([])
+  rationale    String?
+
+  rank Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  reviewRun ReviewRun @relation(fields: [reviewRunId], references: [id], onDelete: Cascade)
+
+  @@index([reviewRunId, forFilePath])
+}
+
+model IndexRun {
+  id             String @id @default(cuid())
+  organizationId String
+  repositoryId   String
+
+  status IndexStatus @default(QUEUED)
+
+  filesDiscovered     Int @default(0)
+  filesProcessed      Int @default(0)
+  filesSkipped        Int @default(0)
+  chunksCreated       Int @default(0)
+  chunksReused        Int @default(0)
+  embeddingsGenerated Int @default(0)
+  tokensEmbedded      Int @default(0)
+  estimatedCostCents  Int @default(0)
+
+  commitSha String?
+  force     Boolean @default(false)
+  error     String? @db.Text
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, startedAt(sort: Desc)])
+  @@index([organizationId])
+}
+
+// ===========================================================================
+// Collaboration
+// ===========================================================================
+
+enum ReviewVerdict {
+  APPROVED
+  CHANGES_REQUESTED
+  NEEDS_DISCUSSION
+}
+
+model Review {
+  id             String @id @default(cuid())
+  organizationId String
+  pullRequestId  String
+  reviewerId     String
+
+  verdict ReviewVerdict
+  summary String?       @db.Text
+
+  // SHA the verdict applies to. A newer head marks the review stale rather than
+  // silently carrying approval forward onto unreviewed code.
+  headSha String
+
+  acknowledgedChecklistItems String[] @default([])
+  dismissedFindingCount      Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  reviewer    User        @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  @@unique([pullRequestId, reviewerId, headSha])
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([pullRequestId])
+  @@index([reviewerId])
+}
+
+enum CommentOrigin {
+  HUMAN
+  AI
+}
+
+model Comment {
+  id             String @id @default(cuid())
+  organizationId String
+  pullRequestId  String
+  // Null for AI-authored comments.
+  authorId       String?
+
+  origin CommentOrigin @default(HUMAN)
+  body   String        @db.Text
+
+  path String?
+  line Int?
+  side String  @default("RIGHT")
+
+  parentId String?
+
+  // Links the comment to an AI or static finding, so resolving the thread can
+  // also record the dismissal.
+  findingFingerprint String?
+
+  resolvedAt   DateTime?
+  resolvedById String?
+  editedAt     DateTime?
+  // True when a force-push removed the anchored line.
+  outdated     Boolean   @default(false)
+
+  // Mirror of the GitHub comment id when the thread was synced outward.
+  githubCommentId BigInt?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  author      User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  resolvedBy  User?       @relation("CommentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  parent      Comment?    @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     Comment[]   @relation("CommentThread")
+
+  @@index([pullRequestId, createdAt])
+  @@index([pullRequestId, path, line])
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+enum ShareScope {
+  SUMMARY
+  FULL
+}
+
+model ShareLink {
+  id             String @id @default(cuid())
+  organizationId String
+  pullRequestId  String
+  createdById    String
+
+  // sha256 of the token. The raw value appears once, in the returned URL.
+  tokenHash      String  @unique
+  scope          ShareScope @default(SUMMARY)
+  redactCode     Boolean    @default(false)
+  passphraseHash String?
+
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  createdBy   User        @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([pullRequestId])
+  @@index([organizationId])
+  @@index([expiresAt])
+}
+
+// ===========================================================================
+// Audit
+// ===========================================================================
+
+enum ActorType {
+  USER
+  SYSTEM
+  WEBHOOK
+  API_KEY
+}
+
+/// Append-only audit trail. No update or delete paths exist in the API for this
+/// table; retention is handled by a scheduled archival job instead.
+model AuditLog {
+  id             String @id @default(cuid())
+  organizationId String
+
+  action    String // AuditAction literal, e.g. "review_run.completed"
+  actorType ActorType @default(USER)
+  actorId   String?
+
+  resourceType String
+  resourceId   String?
+  description  String  @db.Text
+  metadata     Json    @default("{}")
+
+  ipAddress String?
+  userAgent String?
+  // Propagated from the inbound request through every job and tool run.
+  traceId   String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([organizationId, action, createdAt(sort: Desc)])
+  @@index([resourceType, resourceId])
+  @@index([actorId])
+}

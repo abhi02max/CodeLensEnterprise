@@ -1,0 +1,41 @@
+{
+  "name": "codelens-enterprise",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Enterprise AI + ML assisted code review and collaboration platform",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@11.13.0",
+  "scripts": {
+    "dev": "pnpm build:packages && pnpm --parallel --filter \"./apps/**\" dev",
+    "dev:web": "pnpm --filter @codelens/web dev",
+    "dev:api": "pnpm build:packages && pnpm --filter @codelens/api dev",
+    "build:packages": "pnpm --filter \"./packages/**\" build",
+    "build": "pnpm db:generate && pnpm build:packages && pnpm --filter @codelens/api build && pnpm --filter @codelens/web build",
+    "clean": "pnpm -r --if-present clean",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,json,md,yml,yaml}\"",
+    "test": "pnpm -r --if-present test",
+    "db:generate": "pnpm --filter @codelens/database generate",
+    "db:migrate": "pnpm --filter @codelens/database migrate",
+    "db:push": "pnpm --filter @codelens/database push",
+    "db:seed": "pnpm --filter @codelens/database seed",
+    "db:studio": "pnpm --filter @codelens/database studio",
+    "docker:up": "docker compose up -d postgres redis",
+    "docker:up:all": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "ml:train": "python apps/ml-service/scripts/train.py",
+    "ml:dev": "uvicorn app.main:app --reload --port 8000 --app-dir apps/ml-service"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "prettier": "3.4.2",
+    "typescript": "5.7.3"
+  }
+}

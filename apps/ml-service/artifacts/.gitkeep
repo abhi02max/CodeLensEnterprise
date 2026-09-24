@@ -1,0 +1,4 @@
+# Trained model artifacts are build output, not source. They are produced by
+# `python scripts/train.py` and deliberately excluded from version control:
+# a 40 MB joblib bundle in git history is unreviewable, and a model must be
+# reproducible from code plus a seed rather than fetched from a commit.

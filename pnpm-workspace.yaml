@@ -1,0 +1,34 @@
+packages:
+  - 'apps/web'
+  - 'apps/api'
+  - 'packages/*'
+
+# pnpm 11 blocks dependency build scripts by default (strictDepBuilds) and
+# replaced the old onlyBuiltDependencies list with this allowBuilds map.
+#
+# Only packages that genuinely need a postinstall are listed: Prisma downloads its
+# query engine, esbuild fetches a platform binary, unrs-resolver and sharp compile
+# native bindings. Keeping the allowlist explicit means a new dependency wanting to
+# execute code at install time is a visible decision rather than a silent one.
+#
+# Note: when pnpm encounters an unlisted package with a build script it appends a
+# placeholder entry here, so entries must be resolved to true/false rather than left
+# as prose or the next install fails on a duplicated key.
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  prisma: true
+  esbuild: true
+  unrs-resolver: true
+  sharp: true
+
+  # Explicitly denied, so a future install cannot silently enable them.
+  #
+  # @scarf/scarf is install-time analytics that makes an outbound request when a
+  # dependency is installed. It is not needed to build or run anything here, and a
+  # build pipeline should not phone home.
+  '@scarf/scarf': false
+  # Optional native accelerator for msgpackr (pulled in by BullMQ). msgpackr falls
+  # back to its pure-JS path without it, so denying avoids requiring a native
+  # toolchain on developer machines for a marginal serialization speedup.
+  msgpackr-extract: false

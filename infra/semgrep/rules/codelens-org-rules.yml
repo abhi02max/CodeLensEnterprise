@@ -1,0 +1,82 @@
+# Organization-specific Semgrep rules layered on top of the public registry
+# packs. These encode CodeLens's own review policy: the classes of mistake we
+# have decided are never acceptable in this codebase.
+#
+# Loaded by packages/static-analysis via SEMGREP_RULESETS + this local path.
+
+rules:
+  - id: codelens-no-raw-prisma-without-org-scope
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      $queryRaw bypasses the Prisma tenant-scoping middleware. Any raw query
+      touching a tenant table must filter on "organizationId" explicitly, or
+      this becomes a cross-tenant data leak.
+    patterns:
+      - pattern-either:
+          - pattern: $PRISMA.$queryRaw`...`
+          - pattern: $PRISMA.$executeRaw`...`
+      - pattern-not-regex: (?i)organizationid
+
+  - id: codelens-no-plaintext-token-persist
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      GitHub access tokens must be encrypted with the TokenCrypto service
+      before they touch the database. Pass the value through encrypt() first.
+    patterns:
+      - pattern-either:
+          - pattern: |
+              { ..., githubAccessToken: $VAL, ... }
+      - pattern-not: |
+          { ..., githubAccessToken: $CRYPTO.encrypt(...), ... }
+      - pattern-not: |
+          { ..., githubAccessToken: encrypt(...), ... }
+
+  - id: codelens-no-console-in-api
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include: ['apps/api/**']
+    message: >-
+      Use the Nest Logger instead of console.*, so the entry carries the
+      traceId and lands in structured logs.
+    pattern-either:
+      - pattern: console.log(...)
+      - pattern: console.error(...)
+      - pattern: console.warn(...)
+
+  - id: codelens-no-unvalidated-llm-output
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      LLM responses must be parsed through a Zod schema before use. Passing raw
+      JSON.parse output downstream is how hallucinated fields reach the UI.
+    patterns:
+      - pattern: JSON.parse($RESP.$CHOICES...)
+      - pattern-not-inside: $SCHEMA.safeParse(...)
+      - pattern-not-inside: $SCHEMA.parse(...)
+
+  - id: codelens-require-evidence-on-finding
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      Findings persisted without a sourceToolRunId cannot be audited. Attach the
+      ToolRun that produced the evidence.
+    patterns:
+      - pattern: |
+          $DB.staticFinding.create({ data: { ... } })
+      - pattern-not-regex: sourceToolRunId
+
+  - id: codelens-no-network-in-analysis-sandbox
+    languages: [typescript]
+    severity: ERROR
+    paths:
+      include: ['packages/static-analysis/**']
+    message: >-
+      The static analysis sandbox runs untrusted repository code and must stay
+      network-isolated. Do not make outbound requests from this package.
+    pattern-either:
+      - pattern: fetch(...)
+      - pattern: axios.$METHOD(...)
+      - pattern: require('http').$ANY(...)

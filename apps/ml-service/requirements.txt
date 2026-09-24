@@ -1,0 +1,26 @@
+# Pinned exactly. A silent minor bump in scikit-learn can change model behaviour
+# without changing any code, which is the hardest class of regression to diagnose.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+
+scikit-learn==1.6.1
+# xgboost must be >=3.0: scikit-learn 1.6 reworked its estimator "tags" API, and
+# xgboost only implements __sklearn_tags__ from 3.0 onward. On 2.1.x, wrapping
+# XGBClassifier in CalibratedClassifierCV fails with
+#   AttributeError: 'super' object has no attribute '__sklearn_tags__'
+# which surfaces during training, not at import. Verified working with 1.6.1.
+xgboost==3.0.5
+pandas==2.2.3
+numpy==2.2.1
+scipy==1.15.1
+joblib==1.4.2
+
+# SHAP provides real feature attribution for the risk score. The service degrades
+# to coefficient-based approximation if it is absent, so it is not load-bearing.
+shap==0.46.0
+
+# Optional: local embeddings for organizations that cannot send code to a third
+# party. Commented out because it pulls in torch, roughly tripling image size.
+# Enable together with ENABLE_LOCAL_EMBEDDINGS=true.
+# sentence-transformers==3.3.1

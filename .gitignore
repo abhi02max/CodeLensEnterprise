@@ -1,0 +1,60 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ml artifacts (trained models are built, not committed)
+apps/ml-service/artifacts/*
+!apps/ml-service/artifacts/.gitkeep
+apps/ml-service/data/*.csv
+
+# logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# analysis sandbox
+.codelens-tmp/
+
+# editors / os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# coverage
+coverage/
+.nyc_output/
+
+# playwright
+test-results/
+playwright-report/
+
+# compiled output that leaked next to sources. Every package emits to dist/ (see each
+# tsconfig outDir), so a .js or .d.ts inside src/ is always a stale artifact, and a stale
+# one shadows the source it was generated from.
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts

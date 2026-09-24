@@ -1,0 +1,139 @@
+name: codelens-enterprise
+
+services:
+  # --------------------------------------------------------------- postgres
+  # pgvector/pgvector ships the `vector` extension preinstalled.
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: codelens-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-codelens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codelens_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-codelens}
+    ports:
+      - '${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-codelens} -d ${POSTGRES_DB:-codelens}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [codelens]
+
+  # --------------------------------------------------------------- redis
+  redis:
+    image: redis:7-alpine
+    container_name: codelens-redis
+    restart: unless-stopped
+    # noeviction, not allkeys-lru. This Redis holds BullMQ's queues as well as the caches,
+    # and an LRU policy is free to evict a job's hash under memory pressure — the job then
+    # vanishes with no error anywhere, which is the worst possible failure mode for a queue.
+    # Safe to do because every cache key CodeLens writes is set with an explicit TTL, so the
+    # cache bounds itself without needing eviction.
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [codelens]
+
+  # --------------------------------------------------------------- ml service
+  ml-service:
+    build:
+      context: ./apps/ml-service
+      dockerfile: Dockerfile
+    container_name: codelens-ml
+    restart: unless-stopped
+    environment:
+      ML_ARTIFACTS_DIR: /app/artifacts
+      ML_ORG_ARTIFACTS_DIR: /app/org-models
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '${ML_SERVICE_PORT:-8000}:8000'
+    volumes:
+      # Deliberately NOT mounting a volume over /app/artifacts. The shared model
+      # bundle is baked into the image at build time, and a named volume over that
+      # path shadows it: Docker seeds an empty named volume from the image exactly
+      # once, then never again, so every later rebuild keeps serving the original
+      # model while looking like a successful deployment.
+      #
+      # Only per-organization models, which are genuine runtime state produced by
+      # retraining on real review history, get a volume.
+      - ml_org_models:/app/org-models
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks: [codelens]
+
+  # --------------------------------------------------------------- api
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: codelens-api
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-codelens}:${POSTGRES_PASSWORD:-codelens_dev_password}@postgres:5432/${POSTGRES_DB:-codelens}?schema=public
+      REDIS_URL: redis://redis:6379
+      ML_SERVICE_URL: http://ml-service:8000
+      QDRANT_URL: http://qdrant:6333
+    ports:
+      - '${API_PORT:-4000}:4000'
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [codelens]
+    profiles: [full]
+
+  # --------------------------------------------------------------- web
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api/v1}
+    container_name: codelens-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - '3000:3000'
+    depends_on: [api]
+    networks: [codelens]
+    profiles: [full]
+
+  # --------------------------------------------------------------- qdrant
+  # Optional alternative vector store. Enable with: --profile qdrant
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: codelens-qdrant
+    restart: unless-stopped
+    ports:
+      - '${QDRANT_PORT:-6333}:6333'
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks: [codelens]
+    profiles: [qdrant]
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  ml_org_models:
+
+networks:
+  codelens:
+    driver: bridge

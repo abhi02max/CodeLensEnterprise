@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "declaration": true,
+    "sourceMap": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "exclude": ["node_modules", "dist", "build", ".next"]
+}
+
+// Note: there are deliberately no `paths` mappings for @codelens/* here.
+//
+// Each workspace package builds to its own dist/ and declares the others as
+// "workspace:*" dependencies, so pnpm's node_modules symlinks resolve them to
+// built .d.ts files. Adding path mappings back to source would pull one
+// package's .ts files into another's compilation and break rootDir, and would
+// also mean a type error in a dependency surfaces while building its consumer.
+// Build order is handled by `pnpm -r build`, which sorts topologically.
