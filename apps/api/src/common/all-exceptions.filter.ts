@@ -44,6 +44,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const traceId = (request.headers[TRACE_ID_HEADER] as string | undefined) ?? 'unknown';
     const mapped = this.map(exception);
+    const path = redactSensitivePath(request.originalUrl);
 
     const body: ApiErrorBody = {
       statusCode: mapped.status,
@@ -52,18 +53,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ...(mapped.errors ? { errors: mapped.errors } : {}),
       traceId,
       timestamp: new Date().toISOString(),
-      path: request.originalUrl,
+      path,
     };
 
     // 5xx is our fault and gets a stack trace; 4xx is the caller's and gets one line.
     if (mapped.status >= 500) {
       this.logger.error(
-        `${request.method} ${request.originalUrl} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
+        `${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
       this.logger.warn(
-        `${request.method} ${request.originalUrl} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
+        `${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
       );
     }
 
@@ -207,6 +208,41 @@ export class AllExceptionsFilter implements ExceptionFilter {
       logMessage: message,
     };
   }
+}
+
+/**
+ * Path segments that are credentials, and must not be echoed or logged.
+ *
+ * The API refuses tokens in query strings precisely because they end up in access logs and
+ * `Referer` headers — see `extractBearerToken`. A share link cannot follow that rule: the token
+ * *is* the URL, because the whole point is a link somebody can send to a colleague.
+ *
+ * So the token is redacted at the two places it would otherwise escape: the error body returned
+ * to the caller, and the log line written for every request that fails. Without this, every 404
+ * on a dead share link records a live token at warn level, and anyone with log access could
+ * replay it until the link expired — which is a wider audience than the database has.
+ *
+ * Declared as a list so adding the next credential-bearing route is one entry rather than
+ * another ad-hoc replace.
+ */
+const SECRET_PATH_PREFIXES: readonly string[] = ['/review-sessions/share/'];
+
+export function redactSensitivePath(originalUrl: string): string {
+  for (const prefix of SECRET_PATH_PREFIXES) {
+    const start = originalUrl.indexOf(prefix);
+    if (start === -1) continue;
+
+    const valueStart = start + prefix.length;
+    // Stop at the next path or query boundary so anything after the secret survives.
+    const boundary = originalUrl.slice(valueStart).search(/[/?#]/);
+    const valueEnd = boundary === -1 ? originalUrl.length : valueStart + boundary;
+
+    if (valueEnd === valueStart) continue;
+
+    return `${originalUrl.slice(0, valueStart)}[redacted]${originalUrl.slice(valueEnd)}`;
+  }
+
+  return originalUrl;
 }
 
 function httpStatusCode(status: number): string {

@@ -4,6 +4,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AnalysisModule } from './analysis/analysis.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
+import { CommentsModule } from './comments/comments.module';
+import { ReviewSessionsModule } from './review-sessions/review-sessions.module';
 import { McpToolsModule } from './mcp-tools/mcp-tools.module';
 import { MlModule } from './ml/ml.module';
 import { RagModule } from './rag/rag.module';
@@ -60,6 +62,9 @@ import { UsersModule } from './users/users.module';
     RagModule,
     McpToolsModule,
     AnalysisModule,
+    CommentsModule,
+    // After AnalysisModule: the workspace reads the latest run through AnalysisReportService.
+    ReviewSessionsModule,
     // Registered unconditionally. The processors declare `autorun: false` and only start
     // when RUN_WORKERS_IN_API is true, so importing this does not commit the API process to
     // doing background work — but it does guarantee the API and the standalone worker share

@@ -203,7 +203,11 @@ job contract and polling model.
 
 The backend runs end to end. A seeded pull request goes through all eleven tools and produces
 real static-analysis findings, an ML risk score with SHAP-style attributions, retrieved
-repository context, and a persisted report — via the queue and via the inline path.
+repository context, and a persisted report — via the queue and via the inline path. On top of
+that sits the review workspace: human verdicts, a policy-driven merge gate, threaded comments
+that can clear findings from that gate, and time-limited external share links. Human verdicts
+feed back into the ML training labels, so the risk model improves from review outcomes rather
+than staying frozen at its bootstrap weights.
 
 Two known gaps:
 

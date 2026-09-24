@@ -334,9 +334,20 @@ export const AuditAction = {
   REVIEW_RUN_FAILED: 'review_run.failed',
   REVIEW_SUBMITTED: 'review.submitted',
   COMMENT_CREATED: 'comment.created',
+  COMMENT_UPDATED: 'comment.updated',
+  COMMENT_DELETED: 'comment.deleted',
   COMMENT_RESOLVED: 'comment.resolved',
+  COMMENT_REOPENED: 'comment.reopened',
   SHARE_LINK_CREATED: 'share_link.created',
   SHARE_LINK_REVOKED: 'share_link.revoked',
+  /**
+   * Recorded on every successful anonymous view of a share link.
+   *
+   * Worth auditing specifically because it is the only way data leaves the tenant
+   * without an authenticated actor: if a link is forwarded outside the company, the
+   * view count and these entries are the only trace of it.
+   */
+  SHARE_LINK_VIEWED: 'share_link.viewed',
   GITHUB_COMMENT_POSTED: 'github.comment_posted',
   POLICY_UPDATED: 'policy.updated',
   SETTINGS_UPDATED: 'settings.updated',
