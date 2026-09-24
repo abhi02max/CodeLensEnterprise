@@ -301,54 +301,28 @@ async function main(): Promise<void> {
   console.log(`  rag chunks    ${chunkSeeds.length} indexed`);
 
   // ------------------------------------------------------------- PR #1 (analysed)
-  const analysedPr = await prisma.pullRequest.upsert({
-    where: { repositoryId_number: { repositoryId: repo.id, number: 412 } },
-    update: {},
-    create: {
-      organizationId: org.id,
-      repositoryId: repo.id,
-      number: 412,
-      title: 'Allow partial refunds above the original charge amount',
-      body: [
-        'Finance asked for the ability to issue goodwill credits that exceed the',
-        'original charge. This removes the `ALREADY_REFUNDED` guard and adds a',
-        '`allowOvercredit` flag on the request.',
-        '',
-        'Ticket: FIN-2281',
-      ].join('\n'),
-      state: PullRequestState.OPEN,
-      htmlUrl: 'https://github.com/acme-engineering/payments-api/pull/412',
-      authorLogin: 'lena-ortiz',
-      authorAvatarUrl: 'https://avatars.githubusercontent.com/u/3?v=4',
-      authorUserId: developer.id,
-      headRef: 'feat/fin-2281-overcredit',
-      headSha: 'f1e2d3c4b5a6978877665544332211aabbccddee',
-      baseRef: 'main',
-      baseSha: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
-      additions: 96,
-      deletions: 23,
-      changedFiles: 4,
-      commitCount: 3,
-      mergeable: true,
-      labels: ['payments', 'needs-review'],
-      githubCreatedAt: daysAgo(2),
-      githubUpdatedAt: hoursAgo(3),
-      latestRiskScore: 78,
-      latestRiskLevel: RiskLevel.HIGH,
-    },
-  });
-  console.log(`\n  pull request  #${analysedPr.number} ${analysedPr.title}`);
-
+  //
+  // The changed files are declared before the pull request so the pull request's totals can be
+  // summed from them, and each file's own counts come from `countPatchLines`. That makes the patch
+  // text the single source of truth for every line count the demo displays, through the analyzer's
+  // metrics and all the way to the merge gate's blocking reason.
+  //
+  // `touchedLines` holds the new-file line numbers of the added lines, which is what
+  // `touchedLineNumbers` computes on a real GitHub import — and what pattern-scan reads to anchor a
+  // finding, so these are the line numbers the review workspace displays.
   const fileSeeds = [
     {
       filename: 'src/payments/refund.service.ts',
       status: FileChangeStatus.MODIFIED,
-      additions: 41,
-      deletions: 18,
       flags: ['PAYMENT', 'DATABASE'],
-      touchedLines: [58, 59, 60, 61, 62, 63, 71, 72],
+      // The hunk starts at new-file line 55 with three context lines, so the eight added lines run
+      // 58–65. This array used to end 62, 63, 71, 72 — the last two are past the end of the hunk,
+      // so a finding anchored to them pointed at a line the fixture never shows.
+      touchedLines: [58, 59, 60, 61, 62, 63, 64, 65],
       patch: [
-        '@@ -55,12 +55,16 @@ export class RefundService {',
+        // 5 context + 3 deletions = 8 old lines; 5 context + 8 additions = 13 new lines. The header
+        // claimed 12 and 16.
+        '@@ -55,8 +55,13 @@ export class RefundService {',
         '   async issueRefund(input: IssueRefundInput): Promise<Result<Refund, RefundError>> {',
         '     const charge = await this.charges.findById(input.chargeId);',
         '     if (!charge) return err(new RefundError("CHARGE_NOT_FOUND"));',
@@ -370,12 +344,13 @@ async function main(): Promise<void> {
     {
       filename: 'src/payments/dto/issue-refund.dto.ts',
       status: FileChangeStatus.MODIFIED,
-      additions: 6,
-      deletions: 1,
       flags: ['PAYMENT', 'API_SURFACE'],
-      touchedLines: [14, 15, 16],
+      // Four added lines from new-file line 13; the blank line at 13 was missing from this list.
+      touchedLines: [13, 14, 15, 16],
       patch: [
-        '@@ -11,6 +11,11 @@ export class IssueRefundDto {',
+        // 3 context + 0 deletions = 3 old lines; 3 context + 4 additions = 7 new lines. This patch
+        // deletes nothing, though the fixture used to claim one deletion.
+        '@@ -11,3 +11,7 @@ export class IssueRefundDto {',
         '   @IsInt()',
         '   amountCents!: number;',
         '+',
@@ -388,11 +363,10 @@ async function main(): Promise<void> {
     {
       filename: 'prisma/migrations/20260918_add_overcredit_flag/migration.sql',
       status: FileChangeStatus.ADDED,
-      additions: 3,
-      deletions: 0,
       flags: ['DATABASE', 'MIGRATION'],
       touchedLines: [1, 2, 3],
       patch: [
+        // A new file: no old side, three added lines. This one was already consistent.
         '@@ -0,0 +1,3 @@',
         '+ALTER TABLE "charges"',
         '+  ADD COLUMN "overcredit_allowed" BOOLEAN NOT NULL DEFAULT false;',
@@ -402,25 +376,81 @@ async function main(): Promise<void> {
     {
       filename: 'package.json',
       status: FileChangeStatus.MODIFIED,
-      additions: 1,
-      deletions: 1,
       flags: ['DEPENDENCY'],
-      touchedLines: [24],
+      // One context line from new-file line 21, so the replacement lands on 22, not 24.
+      touchedLines: [22],
       patch: [
-        '@@ -21,7 +21,7 @@',
+        // 1 context + 1 deletion = 2 old lines; 1 context + 1 addition = 2 new lines. The header
+        // claimed 7 on each side, which would need three context lines either side of the change.
+        '@@ -21,2 +21,2 @@',
         '     "class-validator": "0.14.1",',
         '-    "decimal.js": "10.4.3",',
         '+    "decimal.js": "10.6.0",',
       ].join('\n'),
     },
-  ];
+  ].map((file) => ({ ...file, ...countPatchLines(file.patch) }));
+
+  const diffTotals = {
+    additions: fileSeeds.reduce((sum, file) => sum + file.additions, 0),
+    deletions: fileSeeds.reduce((sum, file) => sum + file.deletions, 0),
+    changedFiles: fileSeeds.length,
+  };
+
+  const analysedPr = await prisma.pullRequest.upsert({
+    where: { repositoryId_number: { repositoryId: repo.id, number: 412 } },
+    // Diff shape is fixture-owned, so a re-seed corrects it. This used to be `update: {}`, which
+    // meant editing the fixture had no effect on a database that had already been seeded — the
+    // reason the header kept claiming +96/−23 after the patches said otherwise. Nothing else is
+    // touched: title, body and timestamps are not worth clobbering, and review state belongs to the
+    // demo rather than the fixture.
+    update: { ...diffTotals, commitCount: 3 },
+    create: {
+      organizationId: org.id,
+      repositoryId: repo.id,
+      number: 412,
+      title: 'Allow partial refunds above the original charge amount',
+      body: [
+        'Finance asked for the ability to issue goodwill credits that exceed the',
+        'original charge. This removes the `ALREADY_REFUNDED` guard and adds a',
+        '`allowOvercredit` flag on the request.',
+        '',
+        'Ticket: FIN-2281',
+      ].join('\n'),
+      state: PullRequestState.OPEN,
+      htmlUrl: 'https://github.com/acme-engineering/payments-api/pull/412',
+      authorLogin: 'lena-ortiz',
+      authorAvatarUrl: 'https://avatars.githubusercontent.com/u/3?v=4',
+      authorUserId: developer.id,
+      headRef: 'feat/fin-2281-overcredit',
+      headSha: 'f1e2d3c4b5a6978877665544332211aabbccddee',
+      baseRef: 'main',
+      baseSha: 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0',
+      ...diffTotals,
+      commitCount: 3,
+      mergeable: true,
+      labels: ['payments', 'needs-review'],
+      githubCreatedAt: daysAgo(2),
+      githubUpdatedAt: hoursAgo(3),
+      latestRiskScore: 78,
+      latestRiskLevel: RiskLevel.HIGH,
+    },
+  });
+  console.log(`\n  pull request  #${analysedPr.number} ${analysedPr.title}`);
 
   for (const file of fileSeeds) {
     await prisma.pullRequestFile.upsert({
       where: {
         pullRequestId_filename: { pullRequestId: analysedPr.id, filename: file.filename },
       },
-      update: {},
+      // Fixture-owned for the same reason as the pull request above: a re-seed has to be able to
+      // correct a patch and the counts derived from it on an already-seeded database.
+      update: {
+        additions: file.additions,
+        deletions: file.deletions,
+        changes: file.additions + file.deletions,
+        patch: file.patch,
+        touchedLines: file.touchedLines,
+      },
       create: {
         pullRequestId: analysedPr.id,
         filename: file.filename,
@@ -439,6 +469,10 @@ async function main(): Promise<void> {
       },
     });
   }
+  console.log(
+    `  diff          +${diffTotals.additions} −${diffTotals.deletions} across ` +
+      `${diffTotals.changedFiles} file(s), counted from the patch fixtures`,
+  );
 
   const commitSeeds = [
     { sha: '11aa22bb33cc44dd55ee66ff77008899aabbccdd', message: 'feat(refund): add allowOvercredit flag' },
@@ -497,7 +531,15 @@ async function main(): Promise<void> {
   if (!existingRun) {
     // ---- tool runs: the audit spine every finding cites as evidence
     const toolSeeds: Array<{ tool: string; durationMs: number; output: unknown }> = [
-      { tool: 'get_pr_diff', durationMs: 640, output: { files: 4, additions: 96, deletions: 23 } },
+      {
+        tool: 'get_pr_diff',
+        durationMs: 640,
+        output: {
+          files: diffTotals.changedFiles,
+          additions: diffTotals.additions,
+          deletions: diffTotals.deletions,
+        },
+      },
       { tool: 'get_repo_metadata', durationMs: 210, output: { primaryLanguage: 'TypeScript', indexed: true } },
       {
         tool: 'run_static_analysis',
@@ -566,7 +608,9 @@ async function main(): Promise<void> {
         category: FindingCategory.BUG,
         message: 'Promise returned by recordRefund is not awaited on the error path.',
         path: 'src/payments/refund.service.ts',
-        line: 71,
+        // 66 is the `return ok(await this.ledger.recordRefund(...))` line. 71 was past the end of
+        // the hunk, so this finding pointed at code the fixture never shows.
+        line: 66,
         preexisting: false,
       },
       {
@@ -577,7 +621,8 @@ async function main(): Promise<void> {
         message:
           'decimal.js 10.6.0 changes rounding behaviour for values above 2^53. Monetary arithmetic in the ledger relies on the previous default.',
         path: 'package.json',
-        line: 24,
+        // The changed dependency line is 22 in the new file, per the patch's hunk header.
+        line: 22,
         preexisting: false,
       },
     ];
@@ -609,18 +654,26 @@ async function main(): Promise<void> {
     console.log(`  findings      ${findingSeeds.length} static findings`);
 
     // ---- metrics (the persisted ML feature vector)
+    // These match what a real `run_static_analysis` over the four patch fixtures above produces —
+    // checked by running one and comparing — rather than plausible-looking numbers invented
+    // alongside them. It matters because the merge gate reads `linesAdded + linesDeleted` for its
+    // "no test file changed while N lines of code did" blocker, so an invented N here contradicts
+    // the diff the same screen is showing.
     await prisma.prMetrics.create({
       data: {
         reviewRunId: run.id,
-        linesAdded: 96,
-        linesDeleted: 23,
-        filesChanged: 4,
+        linesAdded: diffTotals.additions,
+        linesDeleted: diffTotals.deletions,
+        filesChanged: diffTotals.changedFiles,
         commitCount: 3,
-        functionsChanged: 2,
-        complexityBefore: 7,
-        complexityAfter: 11,
-        complexityDelta: 4,
-        maxFunctionComplexity: 8,
+        // Complexity is estimated from the content reconstructed out of the patches; one function
+        // body changed, and its branching goes from 4 to 6.
+        functionsChanged: 1,
+        complexityBefore: 4,
+        complexityAfter: 6,
+        complexityDelta: 2,
+        maxFunctionComplexity: 4,
+        // Two of the seeded findings are SECURITY at HIGH or above, which is what this counts.
         securityFindingsCount: 2,
         testFilesChanged: 0,
         testToCodeRatio: 0,
@@ -630,7 +683,8 @@ async function main(): Promise<void> {
         configFileChanged: false,
         paymentFileChanged: true,
         infraFileChanged: false,
-        previousRiskyFileCount: 2,
+        // One of the four changed files, refund.service.ts, has prior trouble in this repository.
+        previousRiskyFileCount: 1,
         titleText: analysedPr.title,
         commitText: commitSeeds.map((c) => c.message).join(' \n '),
         featureSchemaVersion: 1,
@@ -681,16 +735,16 @@ async function main(): Promise<void> {
           {
             feature: 'previous_risky_file_count',
             label: 'Historically risky files',
-            value: 2,
+            value: 1,
             contribution: 0.11,
             direction: 'INCREASES_RISK',
             explanation:
-              'refund.service.ts has appeared in two prior hotfixes in this repository.',
+              'One changed file, refund.service.ts, has appeared in prior hotfixes in this repository.',
           },
           {
             feature: 'lines_added',
             label: 'Lines added',
-            value: 96,
+            value: diffTotals.additions,
             contribution: -0.04,
             direction: 'DECREASES_RISK',
             explanation: 'The change is small enough to review carefully in one sitting.',
@@ -871,7 +925,7 @@ async function main(): Promise<void> {
             explanation:
               'The ledger relies on the previous default rounding. Confirm ledger totals are unaffected, or pin the rounding mode explicitly.',
             path: 'package.json',
-            line: 24,
+            line: 22,
             suggestedFix: null,
             evidence: [npmAuditEvidence],
             confidence: 0.6,
@@ -1088,6 +1142,30 @@ async function main(): Promise<void> {
   console.log(`    owner@acme.dev     / ${DEMO_PASSWORD}   (OWNER)`);
   console.log(`    reviewer@acme.dev  / ${DEMO_PASSWORD}   (REVIEWER)`);
   console.log(`    dev@acme.dev       / ${DEMO_PASSWORD}   (DEVELOPER)\n`);
+}
+
+/**
+ * Added and removed line counts, read from the patch itself.
+ *
+ * Every line count the demo shows traces back to these patches: the analyzer sums per-file
+ * additions and deletions into `linesAdded`/`linesDeleted`, and the merge gate turns those into
+ * "No test file changed while N lines of code did". When the counts were written by hand beside the
+ * patches they drifted from them — the pull request header claimed +96/−23 over four patches
+ * holding 16 added lines, so the header and the merge gate contradicted each other on one screen.
+ * Deriving them removes the possibility rather than correcting the instance.
+ */
+function countPatchLines(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+
+  for (const line of patch.split('\n')) {
+    // `@@` hunk headers are excluded by the prefix checks; `+++`/`---` file headers are not.
+    if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (line.startsWith('+')) additions += 1;
+    else if (line.startsWith('-')) deletions += 1;
+  }
+
+  return { additions, deletions };
 }
 
 function sha256(value: string): string {

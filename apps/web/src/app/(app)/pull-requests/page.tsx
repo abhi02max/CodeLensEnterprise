@@ -85,7 +85,7 @@ export default function PullRequestsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-surface-border text-left text-xs text-slate-500">
+                <tr className="whitespace-nowrap border-b border-surface-border text-left text-xs text-slate-500">
                   {/*
                     Columns drop out below `lg` so the two that matter on a narrow screen — risk and
                     the action — stay on screen. Previously the table scrolled inside its container,
@@ -124,23 +124,27 @@ export default function PullRequestsPage() {
                         {pr.changedFiles === 1 ? '' : 's'} · updated {relativeTime(pr.updatedAt)}
                       </p>
                     </td>
-                    <td className="hidden px-3 py-2 text-xs text-slate-600 lg:table-cell">
+                    {/* `whitespace-nowrap` on the narrow columns is load-bearing: the title cell is
+                        `w-full max-w-0`, so it absorbs all slack and leaves every other column at
+                        its min-content width. Without this, "samir-patel" broke at the hyphen and
+                        "chore/ledger-logging → main" wrapped onto three lines. */}
+                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-slate-600 lg:table-cell">
                       {pr.author.login}
                     </td>
-                    <td className="hidden px-3 py-2 xl:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-2 xl:table-cell">
                       <span className="font-mono text-xs text-slate-600">
                         {pr.headRef}
                         <span className="text-slate-400"> → {pr.baseRef}</span>
                       </span>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="whitespace-nowrap px-3 py-2">
                       {pr.risk ? (
                         <RiskBadge level={pr.risk.level} score={pr.risk.score} />
                       ) : (
                         <span className="text-xs text-slate-400">not analysed</span>
                       )}
                     </td>
-                    <td className="hidden px-3 py-2 md:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-2 md:table-cell">
                       {pr.latestRun ? (
                         <div className="flex items-center gap-1.5">
                           <RunStatusBadge status={pr.latestRun.status} />
@@ -152,7 +156,7 @@ export default function PullRequestsPage() {
                         <span className="text-xs text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="hidden px-3 py-2 lg:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-2 lg:table-cell">
                       <div className="flex items-center gap-1.5 text-xs">
                         {pr.humanReviewSummary.approvals > 0 && (
                           <Badge tone="success">{pr.humanReviewSummary.approvals} approved</Badge>
@@ -172,7 +176,7 @@ export default function PullRequestsPage() {
                           )}
                       </div>
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="whitespace-nowrap px-4 py-2">
                       <div className="flex items-center justify-end gap-1.5">
                         {/* Kicking off an analysis from a phone is not a real workflow, and the two
                             buttons together left the title barely an ellipsis wide. Review stays. */}

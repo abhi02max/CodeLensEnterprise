@@ -95,9 +95,11 @@ export default function RepositoriesPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-surface-border text-left text-xs text-slate-500">
+                <tr className="whitespace-nowrap border-b border-surface-border text-left text-xs text-slate-500">
                   {/* Same reasoning as the pull request table: index state and open-PR count are
-                      what a narrow screen needs; branch and language are reference detail. */}
+                      what a narrow screen needs; branch and language are reference detail. The
+                      `whitespace-nowrap` here and on the cells below is required by the title
+                      column's `w-full max-w-0`, which leaves every other column at min-content. */}
                   <th scope="col" className="px-4 py-2 font-medium">Repository</th>
                   <th scope="col" className="hidden px-3 py-2 font-medium md:table-cell">Visibility</th>
                   <th scope="col" className="hidden px-3 py-2 font-medium xl:table-cell">Default branch</th>
@@ -126,18 +128,18 @@ export default function RepositoriesPage() {
                         </p>
                       )}
                     </td>
-                    <td className="hidden px-3 py-2 md:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-2 md:table-cell">
                       <Badge tone={repo.private ? 'neutral' : 'outline'}>
                         {repo.private ? 'Private' : 'Public'}
                       </Badge>
                     </td>
-                    <td className="hidden px-3 py-2 font-mono text-xs text-slate-600 xl:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600 xl:table-cell">
                       {repo.defaultBranch}
                     </td>
-                    <td className="hidden px-3 py-2 text-xs text-slate-600 lg:table-cell">
+                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-slate-600 lg:table-cell">
                       {repo.primaryLanguage ?? '—'}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="whitespace-nowrap px-3 py-2">
                       <Badge tone={INDEX_TONE[repo.indexStatus]}>
                         {repo.indexStatus.replace(/_/g, ' ').toLowerCase()}
                       </Badge>
@@ -152,8 +154,10 @@ export default function RepositoriesPage() {
                         </p>
                       )}
                     </td>
-                    <td className="numeric px-3 py-2 text-slate-800">{repo.openPullRequestCount}</td>
-                    <td className="hidden px-4 py-2 text-xs text-slate-500 md:table-cell">
+                    <td className="numeric whitespace-nowrap px-3 py-2 text-slate-800">
+                      {repo.openPullRequestCount}
+                    </td>
+                    <td className="hidden whitespace-nowrap px-4 py-2 text-xs text-slate-500 md:table-cell">
                       {relativeTime(repo.lastSyncedAt)}
                     </td>
                   </tr>
