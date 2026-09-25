@@ -207,9 +207,8 @@ export class PgVectorStore implements VectorStore {
 
       return rows.map((row) => ({ chunkId: row.id, score: Number(row.rank) }));
     } catch {
-      // The generated column is created by ensureVectorSetup, which can fail on
-      // a database where the role lacks ALTER. Degrade to vector-only rather
-      // than failing the review.
+      // The generated column is installed by the database migration. A damaged
+      // deployment can still serve vector-only results while readiness reports it.
       return [];
     }
   }

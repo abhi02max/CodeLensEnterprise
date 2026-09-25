@@ -21,13 +21,23 @@ degraded API and 503 when PostgreSQL or Redis is unavailable.
    `docker compose ps` for readiness.
 
 `pnpm docker:up` and `pnpm docker:demo:init` run steps 3 and 4 respectively.
-The database setup job runs `prisma db push --skip-generate` after PostgreSQL
-becomes healthy. There is no checked-in Prisma migration history yet. The job
-does not accept data loss, so a schema change requiring destructive work fails
-and needs an explicit migration decision. The PostgreSQL image installs the
-`vector` extension; the init SQL enables `vector`, `pg_trgm`, and `pgcrypto` on
-an empty volume. Prisma also declares these extensions. The API creates the
-RAG ANN index and lexical search column at startup.
+The database setup job runs checked-in migrations after PostgreSQL becomes
+healthy. On an empty database, the baseline migration creates the relational
+schema, extensions, generated full-text column and RAG indexes. On a verified
+pre-migration CodeLens database, it records the baseline as applied without
+replaying the CREATE statements. A partial or incompatible database stops the
+stack with diagnostics. The API checks the resulting schema at startup; it does
+not create or alter database objects. Ordinary startup never seeds demo data.
+
+Back up an existing database before its first baseline registration. A host
+PowerShell example is:
+
+`docker compose exec -T postgres pg_dump -U codelens -d codelens -Fc --no-owner --no-acl -f /tmp/codelens-before-baseline.dump`
+
+`docker cp codelens-postgres:/tmp/codelens-before-baseline.dump "$env:USERPROFILE\codelens-before-baseline.dump"`
+
+Keep the dump outside the repository. Do not edit an
+applied migration file; add a new migration for later schema changes.
 
 ## Normal operation
 

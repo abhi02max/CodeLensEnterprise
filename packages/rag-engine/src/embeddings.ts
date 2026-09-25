@@ -123,7 +123,7 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
  * Trades quality for the guarantee that no source code leaves the deployment.
  * Note the dimension difference: all-MiniLM-L6-v2 produces 384-dimensional
  * vectors, so switching providers requires a matching `vector(N)` column and a
- * full re-index. `ensureVectorSetup` warns when the two disagree.
+ * full re-index. Database readiness checks report a dimension mismatch.
  */
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly model: string;

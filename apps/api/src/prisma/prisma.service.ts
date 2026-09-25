@@ -7,8 +7,9 @@ import {
 import {
   PrismaClient,
   createPrismaClient,
-  ensureVectorSetup,
+  criticalSchemaIssues,
   forOrganization,
+  readDatabaseSnapshot,
   type ScopedPrismaClient,
 } from '@codelens/database';
 import { AppConfigService } from '../config/app-config.service';
@@ -64,20 +65,11 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     await this.client.$connect();
     this.logger.log('Database connected');
 
-    // Creates the pgvector ANN index and the generated tsvector column, neither of
-    // which Prisma can express. Idempotent, and non-fatal: without them RAG search
-    // degrades but everything else works, so a restricted database role should not
-    // prevent boot.
-    const setup = await ensureVectorSetup(this.client, {
-      embeddingDimensions: this.config.rag.embeddingDimensions,
-    });
-
-    if (setup.annIndexReady && setup.lexicalSearchReady) {
-      this.logger.log('pgvector ANN index and lexical search column ready');
+    const issues = criticalSchemaIssues(await readDatabaseSnapshot(this.client));
+    if (issues.length > 0) {
+      throw new Error(`Database schema is not ready:\n- ${issues.join('\n- ')}`);
     }
-    for (const warning of setup.warnings) {
-      this.logger.warn(warning);
-    }
+    this.logger.log('Database schema and RAG indexes verified');
   }
 
   async onModuleDestroy(): Promise<void> {

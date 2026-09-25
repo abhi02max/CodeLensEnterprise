@@ -26,7 +26,6 @@ services:
       - '${POSTGRES_PORT:-5433}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-codelens} -d ${POSTGRES_DB:-codelens}']
       interval: 5s
@@ -91,14 +90,14 @@ services:
       start_period: 40s
     networks: [codelens]
 
-  # Prisma has no checked-in migrations yet. Push the schema without accepting
-  # data loss; a drift that needs destructive changes stops startup explicitly.
+  # Apply checked-in migrations; baseline a verified pre-migration database
+  # without replaying its CREATE statements or changing existing rows.
   db-init:
     build: *api-build
     env_file: [.env]
     environment:
       <<: *app-environment
-    command: ['pnpm', '--filter', '@codelens/database', 'push:safe']
+    command: ['pnpm', '--filter', '@codelens/database', 'init:container']
     depends_on:
       postgres: { condition: service_healthy }
     networks: [codelens]

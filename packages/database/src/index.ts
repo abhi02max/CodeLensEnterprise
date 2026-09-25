@@ -12,11 +12,19 @@ export {
 } from './client';
 
 export {
-  ensureVectorSetup,
   retuneVectorIndex,
   EMBEDDING_DIMENSIONS,
-  type VectorSetupResult,
 } from './vector-setup';
+
+export {
+  BASELINE_MIGRATION,
+  EXPECTED_TABLES,
+  criticalSchemaIssues,
+  decideInitialization,
+  readDatabaseSnapshot,
+  type DatabaseSnapshot,
+  type InitializationState,
+} from './schema-compatibility';
 
 // Re-export the generated types so consumers depend on @codelens/database rather
 // than reaching into @prisma/client directly. Keeps the ORM swappable in theory

@@ -23,7 +23,6 @@
     "test": "pnpm -r --if-present test",
     "db:generate": "pnpm --filter @codelens/database generate",
     "db:migrate": "pnpm --filter @codelens/database migrate",
-    "db:push": "pnpm --filter @codelens/database push",
     "db:seed": "pnpm --filter @codelens/database seed",
     "db:reset-demo": "pnpm --filter @codelens/database reset:demo",
     "db:studio": "pnpm --filter @codelens/database studio",
