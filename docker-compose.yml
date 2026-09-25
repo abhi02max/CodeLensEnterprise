@@ -1,5 +1,16 @@
 name: codelens-enterprise
 
+x-api-build: &api-build
+  context: .
+  dockerfile: apps/api/Dockerfile
+
+x-app-environment: &app-environment
+  NODE_ENV: production
+  API_PORT: 4000
+  DATABASE_URL: postgresql://${POSTGRES_USER:-codelens}:${POSTGRES_PASSWORD:-codelens_dev_password}@postgres:5432/${POSTGRES_DB:-codelens}?schema=public
+  REDIS_URL: redis://redis:6379
+  ML_SERVICE_URL: http://ml-service:8000
+
 services:
   # --------------------------------------------------------------- postgres
   # pgvector/pgvector ships the `vector` extension preinstalled.
@@ -17,7 +28,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-codelens} -d ${POSTGRES_DB:-codelens}']
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-codelens} -d ${POSTGRES_DB:-codelens}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -56,6 +67,10 @@ services:
       ML_ARTIFACTS_DIR: /app/artifacts
       ML_ORG_ARTIFACTS_DIR: /app/org-models
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      ML_MIN_SAMPLES_FOR_ORG_MODEL: ${ML_MIN_SAMPLES_FOR_ORG_MODEL:-200}
+      ENABLE_LOCAL_EMBEDDINGS: ${ENABLE_LOCAL_EMBEDDINGS:-false}
+      LOCAL_EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      SHAP_BACKGROUND_SIZE: ${SHAP_BACKGROUND_SIZE:-100}
     ports:
       - '${ML_SERVICE_PORT:-8000}:8000'
     volumes:
@@ -69,34 +84,62 @@ services:
       # retraining on real review history, get a volume.
       - ml_org_models:/app/org-models
     healthcheck:
-      test: ['CMD', 'python', '-c', "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      test: ['CMD', 'python', '-c', "import json,urllib.request,sys; h=json.load(urllib.request.urlopen('http://localhost:8000/health')); sys.exit(0 if h.get('models_loaded') else 1)"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 40s
     networks: [codelens]
 
+  # Prisma has no checked-in migrations yet. Push the schema without accepting
+  # data loss; a drift that needs destructive changes stops startup explicitly.
+  db-init:
+    build: *api-build
+    env_file: [.env]
+    environment:
+      <<: *app-environment
+    command: ['pnpm', '--filter', '@codelens/database', 'push:safe']
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [codelens]
+    restart: 'no'
+
   # --------------------------------------------------------------- api
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    build: *api-build
     container_name: codelens-api
     restart: unless-stopped
     env_file: [.env]
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-codelens}:${POSTGRES_PASSWORD:-codelens_dev_password}@postgres:5432/${POSTGRES_DB:-codelens}?schema=public
-      REDIS_URL: redis://redis:6379
-      ML_SERVICE_URL: http://ml-service:8000
-      QDRANT_URL: http://qdrant:6333
+      <<: *app-environment
+      RUN_WORKERS_IN_API: 'false'
     ports:
       - '${API_PORT:-4000}:4000'
     depends_on:
-      postgres: { condition: service_healthy }
+      db-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      ml-service: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 10
+      start_period: 20s
     networks: [codelens]
-    profiles: [full]
+
+  worker:
+    build: *api-build
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      <<: *app-environment
+      RUN_WORKERS_IN_API: 'false'
+    command: ['node', 'apps/api/dist/worker.js']
+    depends_on:
+      db-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      ml-service: { condition: service_healthy }
+    networks: [codelens]
 
   # --------------------------------------------------------------- web
   web:
@@ -109,14 +152,22 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      PORT: 3000
     ports:
-      - '3000:3000'
-    depends_on: [api]
+      - '${WEB_PORT:-3000}:3000'
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:3000/signin').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 6s
+      retries: 10
+      start_period: 20s
     networks: [codelens]
-    profiles: [full]
 
   # --------------------------------------------------------------- qdrant
-  # Optional alternative vector store. Enable with: --profile qdrant
+  # Legacy optional service. The current RAG implementation uses pgvector;
+  # enabling this profile does not redirect API retrieval to Qdrant.
   qdrant:
     image: qdrant/qdrant:latest
     container_name: codelens-qdrant

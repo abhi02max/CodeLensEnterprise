@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.tsbuildinfo
+apps/web/test
+apps/api/test
+docs
+screenshots
+.codelens-tmp
