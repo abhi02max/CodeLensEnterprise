@@ -180,6 +180,7 @@ export class RagService {
           // Bounded so a large repository does not exhaust the GitHub hourly budget in a
           // burst and trigger a secondary rate limit.
           fetchConcurrency: 8,
+          treeComplete: !tree.truncated,
           onProgress: (partial) => {
             params.onProgress?.(partial);
             void this.persistProgress(indexRun.id, partial);

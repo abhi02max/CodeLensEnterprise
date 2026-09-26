@@ -2,6 +2,7 @@ import type { PrismaClient } from '@codelens/database';
 import {
   chunkArray,
   type ChunkKind,
+  type CodeChunk,
   type EmbeddedChunk,
   type VectorSearchHit,
   type VectorStore,
@@ -41,53 +42,89 @@ export class PgVectorStore implements VectorStore {
     if (chunks.length === 0) return;
 
     for (const batch of chunkArray(chunks, 200)) {
-      // Build a parameterized VALUES list. Placeholders are generated, values are
-      // always bound — no user or repository content is ever concatenated in.
-      const values: string[] = [];
-      const params: unknown[] = [];
-      let p = 1;
+      // PostgreSQL treats NULL symbols as distinct in the composite key. Whole-file
+      // chunks therefore use their deterministic id as the conflict target.
+      await this.upsertGroup(batch.filter((chunk) => chunk.symbol !== null), false);
+      await this.upsertGroup(batch.filter((chunk) => chunk.symbol === null), true);
+    }
+  }
 
-      for (const chunk of batch) {
-        if (chunk.embedding.length !== this.dimensions) {
-          throw new Error(
-            `Embedding dimension mismatch for ${chunk.path}: got ${chunk.embedding.length}, ` +
-              `expected ${this.dimensions}. The RagChunk.embedding column and ` +
-              `EMBEDDING_DIMENSIONS must agree, and changing either requires a re-index.`,
-          );
-        }
+  private async upsertGroup(group: EmbeddedChunk[], nullSymbol: boolean): Promise<void> {
+    if (group.length === 0) return;
 
-        values.push(
-          `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}::"ChunkKind", $${p++}, $${p++}, ` +
-            `$${p++}, $${p++}, $${p++}, $${p++}, $${p++}::jsonb, $${p++}::vector, $${p++}, NOW(), NOW())`,
-        );
+    const existingIds = new Map<string, string>();
+    if (nullSymbol) {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{
+        id: string;
+        repositoryId: string;
+        path: string;
+        contentHash: string;
+      }>>(
+        `SELECT "id", "repositoryId", "path", "contentHash" FROM "RagChunk"
+         WHERE "organizationId" = $1 AND "symbol" IS NULL
+           AND "repositoryId" = ANY($2::text[]) AND "path" = ANY($3::text[])
+           AND "contentHash" = ANY($4::text[])
+         ORDER BY "createdAt", "id"`,
+        this.organizationId,
+        [...new Set(group.map((chunk) => chunk.repositoryId))],
+        [...new Set(group.map((chunk) => chunk.path))],
+        [...new Set(group.map((chunk) => chunk.contentHash))],
+      );
+      for (const row of rows) {
+        const key = JSON.stringify([row.repositoryId, row.path, row.contentHash]);
+        if (!existingIds.has(key)) existingIds.set(key, row.id);
+      }
+    }
 
-        params.push(
-          chunk.id,
-          this.organizationId,
-          chunk.repositoryId,
-          chunk.path,
-          chunk.symbol,
-          chunk.kind,
-          chunk.language,
-          chunk.content,
-          chunk.startLine,
-          chunk.endLine,
-          chunk.tokenCount,
-          chunk.contentHash,
-          JSON.stringify(chunk.metadata),
-          `[${chunk.embedding.join(',')}]`,
-          chunk.embeddingModel,
+    // Build a parameterized VALUES list. Placeholders are generated, values are
+    // always bound; no user or repository content is concatenated in.
+    const values: string[] = [];
+    const params: unknown[] = [];
+    let p = 1;
+
+    for (const chunk of group) {
+      if (chunk.embedding.length !== this.dimensions) {
+        throw new Error(
+          `Embedding dimension mismatch for ${chunk.path}: got ${chunk.embedding.length}, ` +
+            `expected ${this.dimensions}. The RagChunk.embedding column and ` +
+            `EMBEDDING_DIMENSIONS must agree, and changing either requires a re-index.`,
         );
       }
 
-      await this.prisma.$executeRawUnsafe(
-        `INSERT INTO "RagChunk" (
+      values.push(
+        `($${p++}, $${p++}, $${p++}, $${p++}, $${p++}, $${p++}::"ChunkKind", $${p++}, $${p++}, ` +
+          `$${p++}, $${p++}, $${p++}, $${p++}, $${p++}::jsonb, $${p++}::vector, $${p++}, NOW(), NOW())`,
+      );
+
+      params.push(
+        existingIds.get(JSON.stringify([chunk.repositoryId, chunk.path, chunk.contentHash])) ?? chunk.id,
+        this.organizationId,
+        chunk.repositoryId,
+        chunk.path,
+        chunk.symbol,
+        chunk.kind,
+        chunk.language,
+        chunk.content,
+        chunk.startLine,
+        chunk.endLine,
+        chunk.tokenCount,
+        chunk.contentHash,
+        JSON.stringify(chunk.metadata),
+        `[${chunk.embedding.join(',')}]`,
+        chunk.embeddingModel,
+      );
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `INSERT INTO "RagChunk" (
            "id", "organizationId", "repositoryId", "path", "symbol", "kind", "language",
            "content", "startLine", "endLine", "tokenCount", "contentHash", "metadata",
            "embedding", "embeddingModel", "createdAt", "updatedAt"
          )
          VALUES ${values.join(', ')}
-         ON CONFLICT ("repositoryId", "path", "symbol", "contentHash") DO UPDATE SET
+         ON CONFLICT ${nullSymbol
+           ? '("id")'
+           : '("repositoryId", "path", "symbol", "contentHash")'} DO UPDATE SET
            "content" = EXCLUDED."content",
            "metadata" = EXCLUDED."metadata",
            "embedding" = EXCLUDED."embedding",
@@ -96,9 +133,8 @@ export class PgVectorStore implements VectorStore {
            "startLine" = EXCLUDED."startLine",
            "endLine" = EXCLUDED."endLine",
            "updatedAt" = NOW()`,
-        ...params,
-      );
-    }
+      ...params,
+    );
   }
 
   /**
@@ -375,6 +411,42 @@ export class PgVectorStore implements VectorStore {
       repositoryId,
       paths,
     );
+  }
+
+  /** Remove superseded chunks only after their replacement files were indexed successfully. */
+  async pruneIndexedPaths(
+    repositoryId: string,
+    paths: string[],
+    retainedChunks: ReadonlyArray<Pick<CodeChunk, 'path' | 'symbol' | 'contentHash'>>,
+  ): Promise<number> {
+    if (paths.length === 0) return 0;
+
+    return this.prisma.$executeRawUnsafe(
+      `DELETE FROM "RagChunk" AS old
+       WHERE old."organizationId" = $1 AND old."repositoryId" = $2
+         AND old."path" = ANY($3::text[])
+         AND NOT EXISTS (
+           SELECT 1 FROM jsonb_to_recordset($4::jsonb)
+             AS keep(path text, symbol text, "contentHash" text)
+           WHERE keep.path = old.path
+             AND keep.symbol IS NOT DISTINCT FROM old.symbol
+             AND keep."contentHash" = old."contentHash"
+         )`,
+      this.organizationId,
+      repositoryId,
+      paths,
+      JSON.stringify(retainedChunks.map(({ path, symbol, contentHash }) => ({ path, symbol, contentHash }))),
+    );
+  }
+
+  async indexedPaths(repositoryId: string): Promise<string[]> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ path: string }>>(
+      `SELECT DISTINCT "path" FROM "RagChunk"
+       WHERE "organizationId" = $1 AND "repositoryId" = $2`,
+      this.organizationId,
+      repositoryId,
+    );
+    return rows.map((row) => row.path);
   }
 
   async countByRepository(repositoryId: string): Promise<number> {

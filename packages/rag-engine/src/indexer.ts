@@ -48,6 +48,8 @@ export interface IndexOptions {
   excludePatterns: readonly string[];
   /** Concurrency for content fetching. Bounded to respect API rate limits. */
   fetchConcurrency: number;
+  /** False for truncated or fixture trees; never delete unseen paths on an incomplete listing. */
+  treeComplete?: boolean;
   onProgress?: (progress: Partial<IndexProgress>) => void;
 }
 
@@ -101,12 +103,9 @@ export async function indexRepository(
       ? new Map<string, string>()
       : await deps.store.existingHashes(options.repositoryId);
 
-    if (options.force) {
-      await deps.store.deleteByRepository(options.repositoryId);
-    }
-
     // ---- fetch and chunk
     const allChunks: CodeChunk[] = [];
+    const fetchedPaths: string[] = [];
 
     const fetched = await mapWithConcurrency(
       selected,
@@ -127,6 +126,8 @@ export async function indexRepository(
         progress.filesSkipped += 1;
         continue;
       }
+
+      fetchedPaths.push(entry.path);
 
       const chunks = chunkFile({
         repositoryId: options.repositoryId,
@@ -171,12 +172,15 @@ export async function indexRepository(
         const batch = toEmbed.slice(offset, offset + batchSize);
         const inputs = batch.map((chunk) => buildEmbeddingInput(chunk));
         const vectors = await deps.embeddings.embed(inputs);
+        if (vectors.length !== batch.length) {
+          throw new Error(`Embedding provider returned ${vectors.length} vectors for ${batch.length} chunks`);
+        }
 
         const embedded: EmbeddedChunk[] = [];
 
         for (const [index, chunk] of batch.entries()) {
           const embedding = vectors[index];
-          if (!embedding) continue;
+          if (!embedding) throw new Error(`Embedding provider omitted chunk ${chunk.path}`);
 
           embedded.push({
             ...chunk,
@@ -192,6 +196,18 @@ export async function indexRepository(
 
         options.onProgress?.(progress);
       }
+    }
+
+    await deps.store.pruneIndexedPaths(
+      options.repositoryId,
+      fetchedPaths,
+      allChunks,
+    );
+
+    if (options.treeComplete) {
+      const currentPaths = new Set(options.treeFiles.map((file) => file.path));
+      const removed = orphanedPaths(await deps.store.indexedPaths(options.repositoryId), currentPaths);
+      await deps.store.deleteByPaths(options.repositoryId, removed);
     }
 
     // text-embedding-3-small is $0.02 per million tokens at time of writing.
@@ -296,7 +312,7 @@ function globToRegExp(pattern: string): RegExp {
 }
 
 /**
- * Paths whose chunks should be deleted before re-indexing.
+ * Paths whose chunks should be deleted after a complete tree has been indexed.
  *
  * Renames and deletions leave orphaned chunks that vector search will happily
  * return, so the AI would receive context describing code that no longer exists.

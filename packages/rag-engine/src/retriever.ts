@@ -255,9 +255,9 @@ export class HybridRetriever {
         toRetrievedChunk({
           chunkId: chunk.id,
           score: hit.score,
-          vectorScore: hit.score,
-          lexicalScore: null,
-          sources: [RetrievalSource.VECTOR],
+          vectorScore: embedding ? hit.score : null,
+          lexicalScore: embedding ? null : hit.score,
+          sources: [embedding ? RetrievalSource.VECTOR : RetrievalSource.LEXICAL],
           chunk,
         }),
       );
@@ -302,7 +302,9 @@ export function fuseCandidates(
     const maxScore = Math.max(...hits.map((hit) => hit.score), Number.EPSILON);
 
     for (const hit of hits) {
-      const normalized = hit.score / maxScore;
+      // Cosine similarity may be negative (especially with deterministic test vectors).
+      // It is evidence of a vector hit, but not negative relevance to amplify by EPSILON.
+      const normalized = Math.max(0, hit.score) / maxScore;
       const weighted = normalized * SOURCE_WEIGHTS[source];
 
       const existing = fused.get(hit.chunkId);
