@@ -60,7 +60,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
       return new AiReviewFailure(
         'UNAUTHORIZED',
         `The ${error.provider} API key was rejected (HTTP ${status}). AI review is disabled ` +
-          `until a valid key is configured; static analysis and ML risk are unaffected.`,
+          `until a valid key is configured. Other analysis results are reported separately.`,
         false,
         error,
       );
@@ -90,7 +90,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
       return new AiReviewFailure(
         'PROVIDER_UNAVAILABLE',
         `${error.provider} returned a server error (HTTP ${status}) after several attempts. ` +
-          `Re-run the analysis; everything else in this report is unaffected.`,
+          `Re-run the analysis. Other analysis results are reported separately.`,
         true,
         error,
       );
@@ -105,7 +105,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
       `${error.provider} rejected the review request` +
         (status === null ? '' : ` (HTTP ${status})`) +
         `${error.detail ? `: ${error.detail}` : ''}. This usually means the diff exceeded the ` +
-        `model's context window. Static analysis and ML risk are unaffected.`,
+        `model's context window. Other analysis results are reported separately.`,
       false,
       error,
     );
@@ -126,7 +126,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
     return new AiReviewFailure(
       'MALFORMED_RESPONSE',
       'The model returned output that was not valid JSON and could not be repaired. Nothing was ' +
-        'saved. Static analysis and ML risk are unaffected.',
+        'saved. Other analysis results are reported separately.',
       false,
       error,
     );
@@ -136,7 +136,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
     return new AiReviewFailure(
       'SCHEMA_INVALID',
       'The model returned a review that did not match the required structure, twice. Nothing was ' +
-        'saved rather than storing a partial review. Static analysis and ML risk are unaffected.',
+        'saved rather than storing a partial review. Other analysis results are reported separately.',
       false,
       error,
     );
@@ -146,7 +146,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
     return new AiReviewFailure(
       'TIMED_OUT',
       'The AI provider did not respond within the time budget for this review. Re-run the ' +
-        'analysis; everything else in this report is unaffected.',
+        'analysis. Other analysis results are reported separately.',
       true,
       error,
     );
@@ -154,8 +154,7 @@ export function classifyAiFailure(error: unknown): AiReviewFailure {
 
   return new AiReviewFailure(
     'UNKNOWN',
-    'The AI review could not be generated. Static analysis, ML risk and retrieved context are ' +
-      'still available below.',
+    'The AI review could not be generated. Other analysis results are reported separately.',
     // Conservative: an unrecognised failure is assumed transient, so the reader is told to
     // re-run rather than to go looking for a configuration error that may not exist.
     true,

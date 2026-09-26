@@ -522,6 +522,7 @@ const server = http.createServer(async (request, response) => {
   json(response, 404, { error: { message: `stub has no route for ${request.method} ${url.pathname}` } });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[llm-stub] listening on http://127.0.0.1:${PORT}/v1  scenario=${scenario}`);
+const HOST = process.env.LLM_STUB_HOST ?? '127.0.0.1';
+server.listen(PORT, HOST, () => {
+  console.log(`[llm-stub] listening on http://${HOST}:${PORT}/v1  scenario=${scenario}`);
 });

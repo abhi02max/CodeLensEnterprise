@@ -77,7 +77,12 @@ export const REVIEW_PIPELINE: readonly PipelineNode[] = [
   },
   {
     tool: ToolName.GENERATE_AI_REVIEW,
-    dependsOn: [ToolName.GET_PR_DIFF],
+    dependsOn: [
+      ToolName.GET_PR_DIFF,
+      ToolName.RUN_STATIC_ANALYSIS,
+      ToolName.PREDICT_PR_RISK,
+      ToolName.RETRIEVE_CODE_CONTEXT,
+    ],
     critical: false,
   },
   {
@@ -571,7 +576,7 @@ export function describeDegradation(result: PipelineResult): string[] {
   }
   if (!result.capabilities.aiReview) {
     notes.push(
-      'The AI review could not be generated. Static analysis and metrics are still available below.',
+      'The AI review could not be generated. Other analysis results are reported separately.',
     );
   }
 

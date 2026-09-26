@@ -86,7 +86,7 @@ function describeAiStatus(toolRuns: readonly ToolRunSummary[]): AiReviewStatus {
     state: 'FAILED',
     reason:
       message ||
-      'The AI review could not be generated. Static analysis and metrics are still available.',
+      'The AI review could not be generated. Other analysis results are reported separately.',
     retryable: RETRYABLE_AI_FAILURE_HINTS.test(raw),
   };
 }
@@ -95,7 +95,7 @@ function describeAiStatus(toolRuns: readonly ToolRunSummary[]): AiReviewStatus {
 function describeAiGap(toolRuns: readonly ToolRunSummary[]): string {
   return (
     describeAiStatus(toolRuns).reason ??
-    'The AI review could not be generated. Static analysis and metrics are still available below.'
+    'The AI review could not be generated. Other analysis results are reported separately.'
   );
 }
 

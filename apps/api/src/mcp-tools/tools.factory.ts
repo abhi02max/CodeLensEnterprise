@@ -41,6 +41,7 @@ import { PullRequestsService } from '../pull-requests/pull-requests.service';
 import { RunScratchpad } from '../analysis/run-scratchpad';
 import { ReportWriter } from '../analysis/report-writer.service';
 import * as S from './tool-io.schemas';
+import { aiSkippedByOrganization, aiSkippedWithoutKey } from './ai-skip-reason';
 
 /**
  * The eleven MCP tools.
@@ -831,10 +832,7 @@ export class ToolsFactory {
         // ---- gate 1: organization opt-out
         if (!aiSettings.allowExternalModelCalls) {
           ctx.logger.info('AI review skipped: organization disabled external model calls');
-          return skip(
-            'This organization has disabled external model calls, so no diff content is sent ' +
-              'to a provider. Static analysis and ML risk are still available.',
-          );
+          return skip(aiSkippedByOrganization());
         }
 
         // ---- gate 2: secrets present and policy blocks
@@ -859,11 +857,7 @@ export class ToolsFactory {
 
         if (!apiKey) {
           ctx.logger.warn('AI review skipped: no provider API key configured');
-          return skip(
-            `No API key is configured for ${aiSettings.provider}. Set the corresponding ` +
-              `environment variable to enable AI review. Static analysis and ML risk are ` +
-              `unaffected.`,
-          );
+          return skip(aiSkippedWithoutKey(aiSettings.provider));
         }
 
         // ---- gate 3: redact before sending

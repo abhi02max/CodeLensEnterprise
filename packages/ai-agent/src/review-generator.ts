@@ -409,10 +409,10 @@ export class ReviewGenerator {
         secondAttempt.kind === 'UNPARSEABLE' ? 'MALFORMED_RESPONSE' : 'SCHEMA_INVALID',
         secondAttempt.kind === 'UNPARSEABLE'
           ? 'The model returned output that was not valid JSON and could not be repaired. ' +
-            'Nothing was saved. Static analysis and ML risk are unaffected.'
+            'Nothing was saved. Other analysis results are reported separately.'
           : 'The model returned a review that did not match the required structure, twice. ' +
-            'Nothing was saved rather than storing a partial review. Static analysis and ML ' +
-            'risk are unaffected.',
+            'Nothing was saved rather than storing a partial review. Other analysis results ' +
+            'are reported separately.',
         false,
         new Error(secondAttempt.errors.slice(0, 500)),
       );

@@ -9,6 +9,16 @@ import { LlmProviderError } from './providers';
  * produced from the provider side — so they are pinned here instead.
  */
 describe('classifyAiFailure', () => {
+  it('does not promise that independent analysis capabilities succeeded', () => {
+    for (const error of [
+      new LlmProviderError('unavailable', 503, true, 'OPENAI'),
+      new LlmProviderError('unauthorized', 401, false, 'OPENAI'),
+      new Error('AI response failed schema validation: executiveSummary: Required'),
+    ]) {
+      expect(classifyAiFailure(error).message).toContain('reported separately');
+      expect(classifyAiFailure(error).message).not.toMatch(/unaffected|still available/i);
+    }
+  });
   it('passes an already-classified failure through unchanged', () => {
     const original = new AiReviewFailure('SCHEMA_INVALID', 'nope', false);
     expect(classifyAiFailure(original)).toBe(original);
