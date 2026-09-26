@@ -364,6 +364,11 @@ export class CommentsService {
     organizationId: string,
     pullRequestId: string,
   ): Promise<CommentView[]> {
+    const pullRequest = await this.prisma.unscoped.pullRequest.findFirst({
+      where: { id: pullRequestId, organizationId }, select: { id: true },
+    });
+    if (!pullRequest) throw new NotFoundError('Review session', pullRequestId);
+
     const rows = await this.prisma.unscoped.comment.findMany({
       where: { pullRequestId, organizationId },
       include: COMMENT_INCLUDE,

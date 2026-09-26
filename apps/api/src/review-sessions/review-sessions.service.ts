@@ -23,7 +23,7 @@ import { ShareLinksService } from './share-links.service';
  * The review workspace.
  *
  * There is no ReviewSession table and deliberately so. A "session" is a view: the pull request,
- * its latest `ReviewRun` (analysis state), its `Review` rows (human verdicts), its `Comment`
+ * its authoritative `ReviewRun` (analysis state), its `Review` rows (human verdicts), its `Comment`
  * threads, and its `ShareLink`s. Adding a fourth table to represent the composition of three
  * existing ones would create a second place where review state lives, and the two would
  * disagree the first time a run was re-triggered. The session id is therefore the pull request
@@ -123,6 +123,9 @@ export class ReviewSessionsService {
       githubCommentMinRole: policy.githubCommentMinRole,
     });
 
+    const analysisReady = analysis.analyzed && !analysis.run?.stale &&
+      analysis.run?.status === 'COMPLETED';
+
     const gate = computeReviewGate({
       policy,
       headSha: pullRequest.headSha,
@@ -132,16 +135,16 @@ export class ReviewSessionsService {
         verdict: review.verdict as ReviewVerdict,
         headSha: review.headSha,
       })),
-      findings: analysis.findings.map((finding) => ({
+      findings: (analysisReady ? analysis.findings : []).map((finding) => ({
         severity: asSeverity(finding.severity),
         analyzer: finding.analyzer,
         fingerprint: finding.fingerprint,
         preexisting: finding.preexisting,
       })),
       resolvedFingerprints: this.comments.resolvedFingerprintsOf(commentThreads),
-      riskScore: analysis.risk?.score ?? null,
-      metrics: analysis.metrics,
-      analyzed: analysis.analyzed,
+      riskScore: analysisReady ? (analysis.risk?.score ?? null) : null,
+      metrics: analysisReady ? analysis.metrics : null,
+      analyzed: analysisReady,
     });
 
     return {
@@ -180,7 +183,7 @@ export class ReviewSessionsService {
         firstReviewedAt: pullRequest.firstReviewedAt?.toISOString() ?? null,
       },
 
-      // ---- analysis state: the latest ReviewRun and everything it produced
+      // ---- analysis state: the authoritative ReviewRun and everything it produced
       analyzed: analysis.analyzed,
       run: analysis.run,
       risk: analysis.risk,
@@ -251,6 +254,7 @@ export class ReviewSessionsService {
         headSha: true,
         authorUserId: true,
         merged: true,
+        wasRisky: true,
         firstReviewedAt: true,
         githubCreatedAt: true,
         repository: { select: { fullName: true } },
@@ -362,6 +366,9 @@ export class ReviewSessionsService {
       this.comments.listForPullRequest(params.organizationId, pullRequest.id),
     ]);
 
+    const analysisReady = analysis.analyzed && !analysis.run?.stale &&
+      analysis.run?.status === 'COMPLETED';
+
     const gate = computeReviewGate({
       policy,
       headSha: pullRequest.headSha,
@@ -371,16 +378,16 @@ export class ReviewSessionsService {
         verdict: entry.verdict as ReviewVerdict,
         headSha: entry.headSha,
       })),
-      findings: analysis.findings.map((finding) => ({
+      findings: (analysisReady ? analysis.findings : []).map((finding) => ({
         severity: asSeverity(finding.severity),
         analyzer: finding.analyzer,
         fingerprint: finding.fingerprint,
         preexisting: finding.preexisting,
       })),
       resolvedFingerprints: this.comments.resolvedFingerprintsOf(threads),
-      riskScore: analysis.risk?.score ?? null,
-      metrics: analysis.metrics,
-      analyzed: analysis.analyzed,
+      riskScore: analysisReady ? (analysis.risk?.score ?? null) : null,
+      metrics: analysisReady ? analysis.metrics : null,
+      analyzed: analysisReady,
     });
 
     return { review: toReviewView(review, pullRequest.headSha), gate };
@@ -404,6 +411,7 @@ export class ReviewSessionsService {
     organizationId: string;
     pullRequest: {
       id: string;
+      wasRisky: boolean | null;
       firstReviewedAt: Date | null;
       githubCreatedAt: Date | null;
     };
@@ -418,7 +426,23 @@ export class ReviewSessionsService {
         },
       });
 
-      const wasRisky = everRequestedChanges > 0;
+      // The Review row is revised in place. AuditLog is the durable record of earlier
+      // changes requests after that reviewer later approves the same head.
+      const earlierChangeRequest = params.pullRequest.wasRisky === true || everRequestedChanges > 0
+        ? null
+        : await this.prisma.unscoped.auditLog.findFirst({
+            where: {
+              organizationId: params.organizationId,
+              action: AuditAction.REVIEW_SUBMITTED,
+              AND: [
+                { metadata: { path: ['pullRequestId'], equals: params.pullRequest.id } },
+                { metadata: { path: ['verdict'], equals: ReviewVerdict.CHANGES_REQUESTED } },
+              ],
+            },
+            select: { id: true },
+          });
+      const wasRisky = params.pullRequest.wasRisky === true ||
+        everRequestedChanges > 0 || earlierChangeRequest !== null;
       const now = new Date();
 
       // Time-to-first-review, measured once. Re-measuring on every later verdict would record

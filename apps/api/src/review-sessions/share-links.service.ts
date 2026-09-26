@@ -134,6 +134,11 @@ export class ShareLinksService {
   }
 
   async list(organizationId: string, pullRequestId: string): Promise<ShareLinkView[]> {
+    const pullRequest = await this.prisma.unscoped.pullRequest.findFirst({
+      where: { id: pullRequestId, organizationId }, select: { id: true },
+    });
+    if (!pullRequest) throw new NotFoundError('Review session', pullRequestId);
+
     const rows = await this.prisma.unscoped.shareLink.findMany({
       where: { pullRequestId, organizationId },
       include: { createdBy: { select: { id: true, name: true } } },

@@ -1,11 +1,14 @@
 # Verification harness for review sessions, comments and share links.
 #
-# Expects the API on :4000 and the seeded demo data (pnpm db:seed). Idempotent: safe to re-run.
+# Requires an explicit isolated API URL and seeded demo data (pnpm db:seed).
 #
-# Usage:  pwsh -File apps/api/test/verify-review-sessions.ps1
+# Usage:  $env:CODELENS_API_BASE = 'http://localhost:<isolated-port>/api/v1'; pwsh -File apps/api/test/verify-review-sessions.ps1
 
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:4000/api/v1'
+if (-not $env:CODELENS_API_BASE) { throw 'Set CODELENS_API_BASE to the isolated API URL before running this harness.' }
+$base = $env:CODELENS_API_BASE.TrimEnd('/')
+$apiUri = [uri]$base
+if ($apiUri.Port -eq 4000) { throw 'Refusing the default CodeLens API port; use an isolated stack.' }
 $pass = 0
 $fail = 0
 
@@ -47,7 +50,16 @@ Check 'risk score + level present' ($s.risk.score -gt 0 -and $null -ne $s.risk.l
 Check 'static findings present' ($s.findings.Count -gt 0) "count=$($s.findings.Count)"
 Check 'ML attributions present' ($s.risk.reasons.Count -gt 0) "count=$($s.risk.reasons.Count)"
 Check 'RAG chunk summary present' ($s.ragContext.chunkCount -gt 0) "chunks=$($s.ragContext.chunkCount)"
-Check 'ToolRuns summary present' ($s.toolRuns.Count -eq 11) "count=$($s.toolRuns.Count)"
+$coreTools = @('get_pr_diff', 'get_repo_metadata', 'run_static_analysis', 'extract_ml_features',
+  'predict_pr_risk', 'retrieve_code_context', 'generate_ai_review',
+  'generate_test_suggestions', 'create_review_report', 'create_audit_log')
+$actualTools = @($s.toolRuns | ForEach-Object { $_.tool })
+$expectedTools = @($coreTools)
+if ($actualTools -contains 'post_github_comment') { $expectedTools += 'post_github_comment' }
+Check 'ToolRuns contain the core pipeline and optional GitHub post' (
+  $actualTools.Count -eq $expectedTools.Count -and
+  @($expectedTools | Where-Object { $actualTools -notcontains $_ }).Count -eq 0
+) "tools=$($actualTools -join ',')"
 Check 'ToolRun payloads excluded from workspace' ($null -eq $s.toolRuns[0].output)
 Check 'reviews array present' ($null -ne $s.reviews)
 Check 'comments array present' ($null -ne $s.comments)
@@ -150,17 +162,18 @@ Check 'threads nested one level' ($root.replies.Count -eq 1) "replies=$($root.re
 # ---------------------------------------------------------------- resolve / reopen
 Section 'Resolve / reopen feeds the merge gate'
 $before = (Invoke-RestMethod -Uri "$base/review-sessions/$sessionId" -Headers $reviewer.headers).gate
-$blockingBefore = ($before.blockingReasons | Where-Object { $_ -like '*unresolved finding*' }).Count
+$blockingBefore = [int](($before.blockingReasons | Where-Object { $_ -like '*unresolved finding*' } | Select-Object -First 1) -replace '^([0-9]+).*', '$1')
 
 $resolved = Invoke-RestMethod -Uri "$base/comments/$($inline.id)/resolve" -Method Post -Headers $reviewer.headers
 Check 'thread resolved' ($null -ne $resolved.resolvedAt -and $resolved.resolvedBy.id -eq $reviewer.user.id)
 
 $afterGate = (Invoke-RestMethod -Uri "$base/review-sessions/$sessionId" -Headers $reviewer.headers).gate
-$blockingAfter = ($afterGate.blockingReasons | Where-Object { $_ -like '*unresolved finding*' })
+$blockingAfter = ($afterGate.blockingReasons | Where-Object { $_ -like '*unresolved finding*' } | Select-Object -First 1)
+$blockingAfterCount = if ($blockingAfter) { [int]($blockingAfter -replace '^([0-9]+).*', '$1') } else { 0 }
 Write-Host "  unresolved-findings blocker before: $blockingBefore"
 Write-Host "  unresolved-findings blocker after : $($blockingAfter -join '; ')"
 Check 'resolving a finding thread reduced the blocking count' (
-  $blockingBefore -gt 0 -and $blockingAfter -match '2 unresolved'
+  $blockingBefore -gt 0 -and $blockingAfterCount -eq ($blockingBefore - 1)
 ) "after='$blockingAfter'"
 
 try {
@@ -292,6 +305,13 @@ try {
   Check 'other org cannot read the session' $false 'was allowed'
 } catch { Check 'other org cannot read the session' ((StatusOf $_) -eq 404) "status=$(StatusOf $_)" }
 
+foreach ($path in @("review-sessions/$sessionId/comments", "review-sessions/$sessionId/share-link", "pull-requests/$sessionId/rag-context")) {
+  try {
+    Invoke-RestMethod -Uri "$base/$path" -Headers $other.headers | Out-Null
+    Check "other org cannot list $path" $false 'was allowed'
+  } catch { Check "other org cannot list $path" ((StatusOf $_) -eq 404) "status=$(StatusOf $_)" }
+}
+
 try {
   Invoke-RestMethod -Uri "$base/review-sessions/$sessionId/comments" -Method Post -Headers $other.headers `
     -ContentType 'application/json' -Body (@{ body = 'cross tenant' } | ConvertTo-Json) | Out-Null
@@ -306,7 +326,7 @@ try {
 
 # ---------------------------------------------------------------- audit
 Section 'Audit trail'
-foreach ($action in @('review.submitted','comment.created','comment.updated','comment.deleted','comment.resolved','comment.reopened','share_link.created','share_link.revoked','share_link.viewed')) {
+foreach ($action in @('review_run.started','review_run.completed','review.submitted','comment.created','comment.updated','comment.deleted','comment.resolved','comment.reopened','share_link.created','share_link.revoked','share_link.viewed')) {
   $logs = Invoke-RestMethod -Uri "$base/audit-logs?action=$action&page=1&pageSize=5" -Headers $owner.headers
   Check "audit: $action" ($logs.total -ge 1) "total=$($logs.total)"
 }
