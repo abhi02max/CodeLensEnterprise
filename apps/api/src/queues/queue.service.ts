@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
-import { JOB_NAMES, QUEUE_NAMES } from '@codelens/shared';
+import { JOB_NAMES, PROMPT_VERSION, QUEUE_NAMES } from '@codelens/shared';
 import { Queue, UnrecoverableError, type Job, type JobsOptions } from 'bullmq';
 import { AppConfigService } from '../config/app-config.service';
 import {
@@ -69,10 +69,10 @@ export class QueueService {
    * belongs to the organization: a job id handed back for a non-existent resource is a
    * 404 deferred by a few seconds.
    */
-  async enqueueAnalysis(data: AnalyzePullRequestJobData): Promise<JobStatus> {
+  async enqueueAnalysis(data: AnalyzePullRequestJobData, latestTerminalRunId: string | null = null): Promise<JobStatus> {
     const jobId = data.force
       ? JOB_IDS.analyzeForced(data.pullRequestId, data.headSha)
-      : JOB_IDS.analyze(data.pullRequestId, data.headSha);
+      : JOB_IDS.analyze(data.pullRequestId, data.headSha, PROMPT_VERSION, 1, latestTerminalRunId);
 
     return this.add(QUEUE_NAMES.REVIEW_RUN, JOB_NAMES.ANALYZE_PULL_REQUEST, jobId, data, {
       // A full run is minutes of work across several paid upstreams. Retrying it three

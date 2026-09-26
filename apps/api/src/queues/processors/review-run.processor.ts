@@ -59,6 +59,7 @@ export class ReviewRunProcessor extends BaseQueueProcessor<AnalyzePullRequestJob
         trigger: data.trigger,
         force: data.force,
         postToGithub: data.postToGithub,
+        headSha: data.headSha,
 
         // Published as soon as the row exists so a client can stop polling the job and
         // start polling the run, which exposes per-tool detail the job cannot.

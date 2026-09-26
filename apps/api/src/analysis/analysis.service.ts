@@ -14,8 +14,9 @@ import {
 } from '@codelens/shared';
 import { McpToolRegistry, ReviewOrchestrator, describeDegradation } from '@codelens/ai-agent';
 import { Prisma, RunTrigger, ToolRunStatus } from '@codelens/database';
+import { randomUUID } from 'node:crypto';
 import { NestToolLogger } from '../common/tool-logger';
-import { NotFoundError, RateLimitedError } from '../common/errors';
+import { NotFoundError, RateLimitedError, ValidationError } from '../common/errors';
 import { AppConfigService } from '../config/app-config.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -35,6 +36,8 @@ export interface RunAnalysisParams {
   trigger: RunTrigger;
   force: boolean;
   postToGithub: boolean;
+  /** Queue jobs must not silently analyze a different commit after the head moves. */
+  headSha?: string;
   dryRun?: boolean;
 
   /**
@@ -59,9 +62,9 @@ export interface RunAnalysisParams {
  * Two mechanisms are worth calling out because they are what make this safe to expose:
  *
  * IDEMPOTENCY. A run is keyed on (pullRequestId, headSha, promptVersion, featureSchemaVersion).
- * Re-requesting analysis of unchanged code returns the existing run instead of paying for it
- * twice. A new commit, a prompt revision, or a feature schema bump all produce a genuinely
- * different analysis and therefore a new run.
+ * Re-requesting analysis of unchanged code reuses the newest completed generation instead of
+ * paying twice. A forced run creates a new generation; failed and partial attempts remain
+ * retryable. A new commit, prompt revision, or feature schema bump changes the input identity.
  *
  * ADVISORY LOCKING. A Redis lock stops two workers analysing the same pull request
  * concurrently. The idempotency key is the real correctness guarantee; the lock exists to avoid
@@ -107,6 +110,19 @@ export class AnalysisService {
 
     if (!pullRequest) throw new NotFoundError('Pull request', params.pullRequestId);
 
+    const latestTerminal = params.force ? null : await this.prisma.unscoped.reviewRun.findFirst({
+      where: {
+        organizationId: params.organizationId,
+        pullRequestId: pullRequest.id,
+        headSha: pullRequest.headSha,
+        promptVersion: PROMPT_VERSION,
+        featureSchemaVersion: 1,
+        status: { in: [ReviewRunStatus.COMPLETED, ReviewRunStatus.PARTIAL, ReviewRunStatus.FAILED] },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+    });
+
     return this.queues.enqueueAnalysis({
       organizationId: params.organizationId,
       pullRequestId: pullRequest.id,
@@ -118,7 +134,7 @@ export class AnalysisService {
       trigger: params.trigger,
       force: params.force,
       postToGithub: params.postToGithub,
-    });
+    }, latestTerminal?.id ?? null);
   }
 
   /**
@@ -146,6 +162,10 @@ export class AnalysisService {
 
     if (!pullRequest) throw new NotFoundError('Pull request', params.pullRequestId);
 
+    if (params.headSha && params.headSha !== pullRequest.headSha) {
+      throw new ValidationError('The pull request head changed after this analysis was queued. Request a new analysis.');
+    }
+
     const idempotencyKey = [
       pullRequest.id,
       pullRequest.headSha,
@@ -153,14 +173,22 @@ export class AnalysisService {
       1,
     ].join(':');
 
-    // ---- reuse an equivalent completed run
+    // ---- reuse only when the newest usable generation is complete
     if (!params.force) {
-      const existing = await this.prisma.unscoped.reviewRun.findUnique({
-        where: { idempotencyKey },
+      const existing = await this.prisma.unscoped.reviewRun.findFirst({
+        where: {
+          pullRequestId: pullRequest.id,
+          organizationId: params.organizationId,
+          headSha: pullRequest.headSha,
+          promptVersion: PROMPT_VERSION,
+          featureSchemaVersion: 1,
+          status: { in: [ReviewRunStatus.COMPLETED, ReviewRunStatus.PARTIAL] },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         select: { id: true, status: true },
       });
 
-      if (existing && existing.status === ReviewRunStatus.COMPLETED) {
+      if (existing?.status === ReviewRunStatus.COMPLETED) {
         this.logger.log(
           `Reusing completed run ${existing.id} for ${pullRequest.repository.fullName}` +
             `#${pullRequest.number} at ${pullRequest.headSha.slice(0, 7)}`,
@@ -204,11 +232,15 @@ export class AnalysisService {
     }
 
     // A forced re-run needs a distinct key, or it would collide with the run it replaces.
-    const runKey = params.force ? `${idempotencyKey}:${Date.now()}` : idempotencyKey;
+    const baseKeyTaken = await this.prisma.unscoped.reviewRun.findUnique({
+      where: { idempotencyKey }, select: { id: true },
+    });
+    const runKey = params.force || baseKeyTaken
+      ? `${idempotencyKey}:${randomUUID()}`
+      : idempotencyKey;
 
-    const reviewRun = await this.prisma.unscoped.reviewRun.upsert({
-      where: { idempotencyKey: runKey },
-      create: {
+    const reviewRun = await this.prisma.unscoped.reviewRun.create({
+      data: {
         organizationId: params.organizationId,
         pullRequestId: pullRequest.id,
         status: ReviewRunStatus.RUNNING,
@@ -220,14 +252,23 @@ export class AnalysisService {
         featureSchemaVersion: 1,
         idempotencyKey: runKey,
       },
-      update: {
-        status: ReviewRunStatus.RUNNING,
-        stage: ReviewStage.PENDING,
-        error: null,
-        startedAt: new Date(),
-        finishedAt: null,
-      },
       select: { id: true },
+    });
+
+    await this.audit.record({
+      organizationId: params.organizationId,
+      action: AuditAction.REVIEW_RUN_STARTED,
+      actorId: params.userId,
+      resourceType: 'ReviewRun',
+      resourceId: reviewRun.id,
+      description: `Analysis started for ${pullRequest.repository.fullName}#${pullRequest.number} at ${pullRequest.headSha.slice(0, 7)}`,
+      metadata: {
+        pullRequestId: pullRequest.id,
+        headSha: pullRequest.headSha,
+        force: params.force,
+        trigger: params.trigger,
+      },
+      traceId: params.traceId,
     });
 
     this.scratchpad.create({

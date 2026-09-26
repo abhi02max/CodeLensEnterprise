@@ -27,6 +27,7 @@ import { RedisService } from '../redis/redis.service';
 import { AuditService } from '../audit-logs/audit.service';
 import { GithubClientFactory } from '../auth/github-client.factory';
 import { PolicyService } from '../organizations/policy.service';
+import { authoritativeRunId } from '../analysis/analysis-report.service';
 
 /**
  * Repository indexing and context retrieval.
@@ -471,10 +472,16 @@ export class RagService {
 
   /** Context recorded for a run, for the viewer. */
   async getRunContext(organizationId: string, pullRequestId: string) {
-    const run = await this.prisma.unscoped.reviewRun.findFirst({
-      where: { pullRequestId, organizationId },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, createdAt: true },
+    const pullRequest = await this.prisma.unscoped.pullRequest.findFirst({
+      where: { id: pullRequestId, organizationId }, select: { headSha: true },
+    });
+    if (!pullRequest) throw new NotFoundError('Pull request', pullRequestId);
+
+    const runId = await authoritativeRunId(
+      this.prisma, organizationId, pullRequestId, pullRequest.headSha,
+    );
+    const run = runId && await this.prisma.unscoped.reviewRun.findFirst({
+      where: { id: runId, organizationId }, select: { id: true, createdAt: true },
     });
 
     if (!run) return { reviewRunId: null, retrievedAt: null, chunks: [] };

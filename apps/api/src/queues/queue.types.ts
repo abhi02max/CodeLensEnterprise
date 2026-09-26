@@ -1,4 +1,5 @@
 import { QUEUE_NAMES, type Role } from '@codelens/shared';
+import { randomUUID } from 'node:crypto';
 import type { RunTrigger } from '@codelens/database';
 import { NotFoundError } from '../common/errors';
 
@@ -157,15 +158,16 @@ export function decodeJobHandle(handle: string): { queue: ManagedQueue; jobId: s
  * Deterministic job ids, so a duplicate request collapses onto the in-flight job.
  *
  * Separated with `-` rather than `:` because BullMQ reserves the colon for its own key
- * namespacing and rejects a custom id containing one outright. The components are cuids,
- * hex SHAs and literals, none of which contain a hyphen, so the encoding stays unambiguous.
+ * namespacing and rejects a custom id containing one outright. Analysis IDs include the
+ * version and last terminal run, so a newer generation never replaces a retained job.
  */
 export const JOB_IDS = {
-  analyze: (pullRequestId: string, headSha: string): string =>
-    `analyze-${pullRequestId}-${headSha}`,
+  analyze: (pullRequestId: string, headSha: string, promptVersion: string,
+    featureSchemaVersion: number, latestTerminalRunId: string | null): string =>
+    `analyze-${pullRequestId}-${headSha}-${promptVersion}-${featureSchemaVersion}-${latestTerminalRunId ?? 'initial'}`,
   /** A forced re-run is a genuinely different job and must not collapse onto the old one. */
   analyzeForced: (pullRequestId: string, headSha: string): string =>
-    `analyze-${pullRequestId}-${headSha}-force-${Date.now()}`,
+    `analyze-${pullRequestId}-${headSha}-force-${randomUUID()}`,
   index: (repositoryId: string, force: boolean): string =>
     force ? `index-${repositoryId}-force-${Date.now()}` : `index-${repositoryId}`,
   syncRepository: (repositoryId: string): string => `sync-repo-${repositoryId}`,

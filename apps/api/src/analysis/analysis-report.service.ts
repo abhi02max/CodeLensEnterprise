@@ -13,6 +13,34 @@ import {
 import { NotFoundError } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** Current-head usable evidence wins; an in-flight or failed retry cannot hide it. */
+export async function authoritativeRunId(
+  prisma: PrismaService,
+  organizationId: string,
+  pullRequestId: string,
+  headSha: string,
+): Promise<string | null> {
+  const base = { organizationId, pullRequestId };
+  const select = { id: true } as const;
+  const orderBy = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+  const usable = await prisma.unscoped.reviewRun.findFirst({
+    where: { ...base, headSha, status: { in: ['COMPLETED', 'PARTIAL'] } },
+    select,
+    orderBy,
+  });
+  if (usable) return usable.id;
+
+  const current = await prisma.unscoped.reviewRun.findFirst({
+    where: { ...base, headSha }, select, orderBy,
+  });
+  if (current) return current.id;
+
+  const historical = await prisma.unscoped.reviewRun.findFirst({
+    where: base, select, orderBy,
+  });
+  return historical?.id ?? null;
+}
+
 /** The AI review tool's outcome, in the form the UI needs to decide what to offer. */
 export interface AiReviewStatus {
   state: 'GENERATED' | 'SKIPPED' | 'FAILED' | 'NOT_RUN';
@@ -128,9 +156,11 @@ export class AnalysisReportService {
 
     if (!pullRequest) throw new NotFoundError('Pull request', pullRequestId);
 
-    const run = await this.prisma.unscoped.reviewRun.findFirst({
-      where: { pullRequestId, organizationId },
-      orderBy: { createdAt: 'desc' },
+    const runId = await authoritativeRunId(
+      this.prisma, organizationId, pullRequestId, pullRequest.headSha,
+    );
+    const run = runId && await this.prisma.unscoped.reviewRun.findFirst({
+      where: { id: runId, pullRequestId, organizationId },
       include: {
         toolRuns: { orderBy: { sequence: 'asc' } },
         findings: { orderBy: [{ severity: 'desc' }, { path: 'asc' }, { line: 'asc' }] },
