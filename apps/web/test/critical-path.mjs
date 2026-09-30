@@ -21,10 +21,14 @@ const browser = await chromium.launch({ channel: 'chrome' });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await context.newPage();
 
+function diagnosticText(value) {
+  return String(value).replace(/\/(share|shared)\/[^/?#\s"'<>]+/g, '/$1/[redacted]').split(password).join('[redacted]');
+}
+
 function audit(target) {
-  target.on('pageerror', (error) => errors.push(`JS: ${error.message}`));
+  target.on('pageerror', (error) => errors.push(`JS: ${diagnosticText(error.message)}`));
   target.on('requestfailed', (request) => {
-    const path = new URL(request.url()).pathname.replace(/\/shared\/[^/]+/, '/shared/[redacted]');
+    const path = new URL(request.url()).pathname.replace(/\/(share|shared)\/[^/]+/, '/$1/[redacted]');
     const failure = `Network: ${request.method()} ${path} ${request.failure()?.errorText}`;
     if (request.failure()?.errorText === 'net::ERR_ABORTED') aborted.push(failure);
     else errors.push(failure);
@@ -47,7 +51,7 @@ function audit(target) {
     const expectedShare = (status === 401 || status === 404) && path.includes('/review-sessions/share/');
     const expectedTenant = status === 404 && /\/review-sessions\/[^/]+$/.test(path);
     if (!expectedAuth && !expectedShare && !expectedTenant) {
-      errors.push(`HTTP ${status}: ${response.request().method()} ${path.replace(/\/share\/[^/]+/, '/share/[redacted]')}`);
+      errors.push(`HTTP ${status}: ${response.request().method()} ${path.replace(/\/(share|shared)\/[^/]+/, '/$1/[redacted]')}`);
     }
   });
 }
@@ -72,7 +76,7 @@ async function noOverflow(target) {
     console.log(`Overflow offenders: ${JSON.stringify(offenders)}`);
     await shot(`overflow-${await target.evaluate(() => innerWidth)}`, target);
   }
-  assert.ok(overflow <= 2, `Horizontal overflow: ${overflow}px at ${target.url()}`);
+  assert.ok(overflow <= 2, `Horizontal overflow: ${overflow}px at ${new URL(target.url()).pathname.replace(/\/(share|shared)\/[^/]+/, '/$1/[redacted]')}`);
 }
 
 async function signIn(email = 'owner@acme.dev') {

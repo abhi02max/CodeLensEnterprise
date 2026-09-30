@@ -59,12 +59,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // 5xx is our fault and gets a stack trace; 4xx is the caller's and gets one line.
     if (mapped.status >= 500) {
       this.logger.error(
-        `${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
+        `trace=${traceId} ${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
         exception instanceof Error ? exception.stack : undefined,
       );
     } else {
       this.logger.warn(
-        `${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
+        `trace=${traceId} ${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
       );
     }
 

@@ -35,6 +35,18 @@ const results = [];
 const consoleErrors = [];
 const layoutIssues = [];
 
+function diagnosticText(value) {
+  return String(value).replace(/\/(share|shared)\/[^/?#\s"'<>]+/g, '/$1/[redacted]').split(PASSWORD).join('[redacted]');
+}
+
+function diagnosticUrl(value) {
+  const url = new URL(value);
+  url.search = '';
+  url.hash = '';
+  url.pathname = url.pathname.replace(/\/(share|shared)\/[^/]+/, '/$1/[redacted]');
+  return url.toString();
+}
+
 function check(label, ok, detail = '') {
   results.push({ label, ok, detail });
   console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? `  ${detail}` : ''}`);
@@ -162,11 +174,11 @@ const page = await context.newPage();
 
 page.on('console', (message) => {
   if (message.type() === 'error') {
-    consoleErrors.push({ url: page.url(), text: message.text().slice(0, 300) });
+    consoleErrors.push({ url: diagnosticUrl(page.url()), text: diagnosticText(message.text()).slice(0, 300) });
   }
 });
 page.on('pageerror', (error) => {
-  consoleErrors.push({ url: page.url(), text: `pageerror: ${error.message}`.slice(0, 300) });
+  consoleErrors.push({ url: diagnosticUrl(page.url()), text: `pageerror: ${diagnosticText(error.message)}`.slice(0, 300) });
 });
 
 try {
@@ -194,7 +206,7 @@ try {
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForSelector('[role="alert"]', { timeout: 15000 });
   check('bad credentials show an inline error', await page.locator('[role="alert"]').isVisible());
-  check('credentials never reach the URL', !page.url().includes('password'), page.url());
+  check('credentials never reach the URL', !page.url().includes('password'), diagnosticUrl(page.url()));
   await shoot(page, '02-signin-error');
 
   // ------------------------------------------------------------------ login
@@ -409,7 +421,7 @@ try {
   section('Shared review (unauthenticated)');
   const anon = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const anonPage = await anon.newPage();
-  anonPage.on('pageerror', (error) => consoleErrors.push({ url: anonPage.url(), text: `pageerror: ${error.message}` }));
+  anonPage.on('pageerror', (error) => consoleErrors.push({ url: diagnosticUrl(anonPage.url()), text: `pageerror: ${diagnosticText(error.message)}` }));
 
   await anonPage.goto(`${WEB}${sharedHref}`, { waitUntil: 'networkidle' });
   await anonPage.waitForSelector('text=Shared review', { timeout: 20000 });
@@ -500,9 +512,9 @@ try {
     await shoot(page, `15-pull-requests-${name}`);
   }
 } catch (error) {
-  check('walkthrough completed without throwing', false, error.message);
+  check('walkthrough completed without throwing', false, diagnosticText(error.message));
   await page.screenshot({ path: join(SHOTS, 'ZZ-failure.png'), fullPage: true }).catch(() => {});
-  console.error(error);
+  console.error(diagnosticText(error.stack ?? error.message));
 } finally {
   // ------------------------------------------------------------------ report
   section('Console errors');

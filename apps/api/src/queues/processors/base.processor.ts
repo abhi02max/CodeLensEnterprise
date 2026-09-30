@@ -1,6 +1,6 @@
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { OnWorkerEvent, WorkerHost } from '@nestjs/bullmq';
-import type { Job } from 'bullmq';
+import { UnrecoverableError, type Job } from 'bullmq';
 import { AppConfigService } from '../../config/app-config.service';
 import type { BaseJobData, JobProgress, ManagedQueue } from '../queue.types';
 import { isWorkerProcess } from '../worker-mode';
@@ -83,7 +83,8 @@ export abstract class BaseQueueProcessor<TData extends BaseJobData>
   @OnWorkerEvent('active')
   onActive(job: Job<TData>): void {
     this.logger.log(
-      `Started ${job.name} ${job.id} attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1}`,
+      `Started ${job.name} ${job.id} trace=${job.data.traceId} ` +
+        `attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1}`,
     );
   }
 
@@ -93,7 +94,7 @@ export abstract class BaseQueueProcessor<TData extends BaseJobData>
       job.processedOn && job.finishedOn ? job.finishedOn - job.processedOn : null;
 
     this.logger.log(
-      `Completed ${job.name} ${job.id}` +
+      `Completed ${job.name} ${job.id} trace=${job.data.traceId}` +
         (durationMs === null ? '' : ` in ${Math.round(durationMs / 1000)}s`),
     );
   }
@@ -101,12 +102,15 @@ export abstract class BaseQueueProcessor<TData extends BaseJobData>
   @OnWorkerEvent('failed')
   onFailed(job: Job<TData> | undefined, error: Error): void {
     const attempts = job?.opts.attempts ?? 1;
-    const willRetry = job ? job.attemptsMade < attempts : false;
+    const willRetry = job
+      ? !(error instanceof UnrecoverableError) && job.attemptsMade < attempts
+      : false;
 
     this.logger.error(
       `Failed ${job?.name ?? 'job'} ${job?.id ?? '?'} ` +
+        `trace=${job?.data.traceId ?? 'unknown'} ` +
         `(attempt ${job?.attemptsMade ?? 0}/${attempts}, ` +
-        `${willRetry ? 'will retry' : 'giving up'}): ${error.message}`,
+        `${willRetry ? 'retry eligible' : 'giving up'}): ${error.message}`,
     );
   }
 
