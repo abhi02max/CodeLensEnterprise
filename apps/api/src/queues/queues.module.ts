@@ -27,8 +27,7 @@ import { MANAGED_QUEUES } from './queue.types';
       useFactory: (config: AppConfigService) => ({
         connection: {
           url: config.redisUrl,
-          // Required by BullMQ: a blocking command queued during a Redis outage must fail
-          // fast rather than buffer until it succeeds against stale state.
+          // Blocking workers must tolerate reconnects; readiness separately bounds probes.
           maxRetriesPerRequest: null,
         },
         // Namespaced so a shared Redis can host more than one environment without one

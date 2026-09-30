@@ -27,9 +27,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy, EmbeddingCac
 
   constructor(private readonly config: AppConfigService) {
     this.client = new Redis(config.redisUrl, {
-      // BullMQ requires this, and it is the right setting generally: a command
-      // queued during an outage should fail fast rather than buffer indefinitely.
-      maxRetriesPerRequest: null,
+      // This is the best-effort cache client, not BullMQ's blocking connection.
+      maxRetriesPerRequest: 1,
+      commandTimeout: 5000,
+      enableOfflineQueue: false,
       enableReadyCheck: true,
       lazyConnect: true,
       retryStrategy: (attempt) => Math.min(attempt * 200, 5000),

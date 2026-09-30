@@ -46,6 +46,57 @@ export class HealthService {
    * user to notice that an analysis never started.
    */
   private static readonly MAX_QUEUE_WAIT_MS = 120_000;
+  private static readonly PROBE_TIMEOUT_MS = 5000;
+  private readonly pendingProbes = new Map<string, Promise<DependencyHealth>>();
+
+  private probe(
+    name: string,
+    required: boolean,
+    operation: () => Promise<DependencyHealth>,
+  ): Promise<DependencyHealth> {
+    const pending = this.pendingProbes.get(name);
+    if (pending) return pending;
+    const raw = Promise.resolve().then(operation);
+    const result = this.boundedProbe(name, required, () => raw);
+    this.pendingProbes.set(name, result);
+    // A timeout cannot cancel Prisma/BullMQ commands. Reuse the bounded result
+    // until the original command settles, rather than accumulating outage probes.
+    void raw.then(
+      () => this.pendingProbes.delete(name),
+      () => this.pendingProbes.delete(name),
+    );
+    return result;
+  }
+
+  private async boundedProbe(
+    name: string,
+    required: boolean,
+    operation: () => Promise<DependencyHealth>,
+  ): Promise<DependencyHealth> {
+    const startedAt = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise<DependencyHealth>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Health probe timed out')),
+            HealthService.PROBE_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (error) {
+      return {
+        name,
+        required,
+        ok: false,
+        latencyMs: Date.now() - startedAt,
+        detail: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -109,28 +160,32 @@ export class HealthService {
   }
 
   async database(): Promise<DependencyHealth> {
-    const result = await this.prisma.isHealthy();
+    return this.probe('postgres', true, async () => {
+      const result = await this.prisma.isHealthy();
 
-    return {
-      name: 'postgres',
-      ok: result.ok,
-      latencyMs: result.latencyMs,
-      required: true,
-      ...(result.error ? { detail: result.error } : {}),
-    };
+      return {
+        name: 'postgres',
+        ok: result.ok,
+        latencyMs: result.latencyMs,
+        required: true,
+        ...(result.error ? { detail: result.error } : {}),
+      };
+    });
   }
 
   async redisHealth(): Promise<DependencyHealth> {
-    const result = await this.redis.isHealthy();
+    return this.probe('redis', true, async () => {
+      const result = await this.redis.isHealthy();
 
-    return {
-      name: 'redis',
-      ok: result.ok,
-      latencyMs: result.latencyMs,
-      // Required: BullMQ needs it, so without Redis no analysis can be enqueued.
-      required: true,
-      ...(result.error ? { detail: result.error } : {}),
-    };
+      return {
+        name: 'redis',
+        ok: result.ok,
+        latencyMs: result.latencyMs,
+        // Required: BullMQ needs it, so without Redis no analysis can be enqueued.
+        required: true,
+        ...(result.error ? { detail: result.error } : {}),
+      };
+    });
   }
 
   /**
@@ -202,7 +257,7 @@ export class HealthService {
     }
   }
 
-  /** Whether an LLM provider is configured. Not a network call: no probe request. */
+  /** Whether an LLM provider is configured. Reachability is deliberately not asserted. */
   aiHealth(): DependencyHealth {
     const ai = this.config.ai;
 
@@ -212,7 +267,7 @@ export class HealthService {
       latencyMs: 0,
       required: false,
       detail: ai.configured
-        ? `${ai.provider} / ${ai.model}`
+        ? `${ai.provider} / ${ai.model} configured; provider reachability not checked`
         : `No API key configured for ${ai.provider}; AI review will be skipped`,
     };
   }
@@ -222,7 +277,7 @@ export class HealthService {
       this.database(),
       this.redisHealth(),
       this.mlHealth(),
-      this.queueHealth(),
+      this.probe('queues', false, () => this.queueHealth()),
     ]);
 
     const checks: DependencyHealth[] = [database, redis, ml, queues, this.aiHealth()];
