@@ -52,7 +52,7 @@ reachable.
 flowchart TB
     WEB["<b>apps/web</b> · Next.js 15 · React 19<br/>access token in memory only"]
     REST["<b>apps/api</b> · NestJS REST<br/>JWT · RBAC · Zod · tenant-scoped Prisma"]
-    REDIS[("Redis<br/>5 BullMQ queues")]
+    REDIS[("Redis<br/>3 managed BullMQ queues")]
     WORK["BullMQ worker<br/>separate process in production"]
     ORCH["Tool orchestrator<br/>11-node DAG"]
     PG[("Postgres 16 + pgvector<br/>29 models")]
@@ -223,7 +223,7 @@ data.
 ### 1. Install and configure
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 cp .env.example .env          # Windows: Copy-Item .env.example .env
 ```
 
@@ -241,16 +241,15 @@ tokens. The API refuses to boot if it is missing or the wrong length.
 ### 2. Infrastructure and demo data
 
 ```bash
-pnpm docker:up          # postgres + redis
-pnpm db:push            # apply the Prisma schema
-pnpm db:seed            # demo org, users, policy, PR #412 and #415
+pnpm docker:up          # complete stack; db-init applies checked-in migrations
+pnpm docker:demo:init   # explicit, local-only demo initialization
 ```
 
 ### 3. Run
 
 ```bash
-pnpm dev                # web :3000 + api :4000
-docker compose up -d ml-service   # optional; risk degrades gracefully without it
+docker compose ps       # API/web/ML health; worker runs in a separate process
+pnpm docker:logs
 ```
 
 | Service | URL |
@@ -259,6 +258,14 @@ docker compose up -d ml-service   # optional; risk degrades gracefully without i
 | API | http://localhost:4000/api/v1 |
 | Swagger | http://localhost:4000/docs |
 | ML service | http://localhost:8000/docs |
+
+Compose starts API/web itself; do not also run `pnpm dev` on the same ports.
+Database initialization never seeds automatically. `0_baseline` owns the relational
+schema, extensions, generated full-text column, vector column and RAG indexes.
+Applied migrations are immutable. Compatible pre-migration databases are checked
+before metadata-only baselining; partial databases fail rather than reset.
+Never use `db push`, `--accept-data-loss` or volume deletion to bypass initialization.
+`pnpm docker:down` stops the stack without deleting its volumes.
 
 ### Demo credentials
 
@@ -294,7 +301,7 @@ while 31 lines of code did."*
 ### Resetting between demos
 
 ```bash
-pnpm db:reset-demo
+pnpm docker:demo:reset   # explicit collaboration reset; not ordinary startup
 ```
 
 Every demo adds comments, verdicts and share links to the same pull request. After a dozen passes
@@ -308,24 +315,32 @@ bounded instead.
 
 ## Verification
 
-There is no CI badge here because the interesting verification is not unit tests. **434 assertions**
-across six suites, most of which exist because they caught something.
+Canonical deterministic checks run locally and in the checked-in CI workflow.
+Runtime/browser checks use an explicitly selected disposable environment, not CI secrets.
+See [verification evidence and claim audit](docs/verification.md) and the
+[demo runbook](docs/demo-runbook.md). Historical assertion totals are not current coverage.
 
 ```bash
-pnpm -r --if-present typecheck                      # 8 packages
-pnpm --filter @codelens/static-analysis test        #  11 — analyzer line anchoring
-pnpm --filter @codelens/ai-agent test               #  15 — AI failure classification
-pwsh -File apps/api/test/verify-ai-review.ps1       # 157 — AI path incl. 7 provider failure modes
-pwsh -File apps/api/test/verify-review-sessions.ps1 #  87 — workspace, gate, comments, sharing
-pwsh -File apps/web/test/verify-web-flow.ps1        #  84 — every API contract the screens read
-node apps/web/test/browser-walkthrough.mjs          #  80 — real Chrome, real clicks
+pnpm db:validate
+pnpm db:generate
+pnpm build:packages      # workspace imports resolve built declarations
+pnpm typecheck
+pnpm test                # includes database, static, RAG, AI and API tests
+pnpm build               # packages, API and web
+pnpm test:browser        # set WEB_URL, API_URL and DEMO_PASSWORD first
 ```
 
 The browser walkthrough drives system Chrome through Playwright: signs in, walks the demo flow,
 creates a comment, submits both verdicts, creates and opens a share link, checks tablet and mobile
 layouts. Alongside the functional assertions it audits every page for document overflow, elements
-wider than their container and clipped text, and fails on any unexpected console error. It writes
-screenshots and a `report.json`.
+wider than their container and clipped text. The walkthrough records console errors;
+the critical-path suite fails on genuine JavaScript/network errors. It writes
+screenshots and a `report.json` in ignored output directories. Chrome must be installed.
+Use a seeded disposable stack: these tests create runs, comments, verdicts, share
+links and an outsider account. The walkthrough expects demo PR #415 unanalysed.
+Set `EXPECT_AI_STATUS=SKIPPED` for the critical path when no provider is configured.
+There is no configured repository TypeScript lint command. `format:check` remains
+available, but existing formatting debt prevents treating it as a passing CI gate.
 
 The AI path is verified against a local provider double that speaks the OpenAI wire format, so the
 real adapter, retry logic, JSON extraction, Zod validation, repair loop, evidence filter and

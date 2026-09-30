@@ -32,13 +32,13 @@ quantified outcome each.
 > including credentials leaking into the URL through a pre-hydration form submission, a secret
 > scanner that silently detected nothing on diff-reconstructed content, and static-analysis findings
 > anchored to wrong line numbers by a global counter; hardened the code and locked the behaviour in
-> with 434 assertions across Vitest, PowerShell contract suites and a Playwright walkthrough.
+> with deterministic package tests, isolated runtime contract checks and real browser walkthroughs.
 
 ### Shorter variants, if space is tight
 
 > Built an AI/ML code review platform (NestJS, Next.js, Prisma, Postgres/pgvector, Redis/BullMQ,
 > Python/FastAPI): 11-tool analysis DAG producing static findings, XGBoost risk scores with SHAP
-> attribution, pgvector RAG context and a schema-validated AI review. 434 verification assertions.
+> attribution, pgvector RAG context and a schema-validated AI review. See verification.md for current evidence and credential boundaries.
 
 > Engineered evidence grounding for the LLM layer: schema validation, bounded repair, an evidence
 > filter that drops uncited security findings, and policy override of unsafe recommendations —
@@ -169,7 +169,7 @@ Provider failures are classified, not collapsed. Rejected key, model not found, 
 provider down, context too long, unparseable, schema-invalid — seven distinct states, each asserted
 with a correct `retryable` flag, and the run comes out `PARTIAL` rather than `FAILED`.
 
-**How I verified it, and what that found (90s).** 434 assertions across six suites. The AI path runs
+**How I verified it, and what that found (90s).** Deterministic tests plus isolated runtime and browser checks; current totals are in verification.md. The AI path runs
 against a local double speaking the OpenAI wire format, so the real adapter, retry logic, JSON
 extraction, validation, repair loop, evidence filter and persistence all execute unchanged — because
 the failure modes worth testing can't be produced on demand from a real provider.

@@ -111,7 +111,8 @@ sequenceDiagram
     A-->>W: whole workspace in one payload
 ```
 
-Five queues: `review-run`, `repo-index`, `pr-sync`, `github-publish`, `model-retrain`.
+Three managed queues: `review-run`, `repo-index`, `pr-sync`.
+`github-publish` and `model-retrain` are reserved constants, not registered consumers.
 
 **Why queued.** A full analysis takes tens of seconds and involves subprocesses, an HTTP call to
 Python and an LLM round trip. Run inline it competes with request handling for the event loop. In
