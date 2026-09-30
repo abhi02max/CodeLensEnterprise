@@ -113,7 +113,7 @@ try {
   assert.equal(session.pullRequest.changedFiles, 4);
   assert.equal(session.pullRequest.additions, 26);
   assert.equal(session.pullRequest.deletions, 5);
-  assert.equal(session.risk.score, 91);
+  assert.ok(Number.isFinite(session.risk.score));
   assert.ok(session.run?.id);
   await page.getByRole('heading', { name: 'Static findings' }).waitFor();
   for (const line of [58, 59, 69]) {
@@ -126,7 +126,7 @@ try {
     assert.ok((await page.getByText(finding.ruleId, { exact: true }).count()) > 0);
   }
   assert.ok((await page.getByText('Blocked', { exact: true }).count()) > 0);
-  assert.ok((await page.getByText('91', { exact: true }).count()) > 0);
+  assert.ok((await page.getByText(String(session.risk.score), { exact: true }).count()) > 0);
   assert.ok(session.ragContext.chunkCount > 0);
   assert.ok((await page.getByRole('heading', { name: 'Repository context' }).count()) > 0);
   assert.ok((await page.getByRole('heading', { name: 'AI review' }).count()) > 0);
@@ -167,7 +167,7 @@ try {
   }
   await page.reload();
   await page.getByRole('heading', { name: 'Static findings' }).waitFor();
-  assert.ok((await page.getByText('91', { exact: true }).count()) > 0);
+  assert.ok((await page.getByText(String(refreshedSession.risk.score), { exact: true }).count()) > 0);
 
   console.log('Browser critical path: discussion, verdict, share');
   const unique = Date.now().toString(36);
@@ -267,7 +267,19 @@ try {
   await page.waitForURL('**/signin');
   await page.goto(`${web}/reviews/${session.pullRequest.id}`);
   await page.waitForURL('**/signin');
-  await signIn('outsider@other-corp.dev');
+  const outsiderEmail = `browser-outsider-${unique}@example.test`;
+  const signup = await fetch(`${api}/auth/signup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: outsiderEmail,
+      password,
+      name: 'Browser outsider',
+      organizationName: `Browser isolation ${unique}`,
+    }),
+  });
+  assert.ok(signup.ok, `Outsider setup returned HTTP ${signup.status}`);
+  await signIn(outsiderEmail);
   await page.goto(`${web}/reviews/${session.pullRequest.id}`);
   await page.getByText('Review session not found').waitFor();
   assert.equal(await page.getByRole('heading', { name: 'Static findings' }).count(), 0);

@@ -22,6 +22,7 @@
     "reset:demo:container": "tsx scripts/reset-demo.ts",
     "verify:vector": "dotenv -e ../../.env -- tsx scripts/verify-vector-setup.ts",
     "test:lifecycle": "tsx --test test/schema-compatibility.test.ts",
+    "test": "pnpm test:lifecycle",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "prisma": {

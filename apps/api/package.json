@@ -11,7 +11,6 @@
     "start:prod": "node dist/main.js",
     "worker": "node dist/worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },

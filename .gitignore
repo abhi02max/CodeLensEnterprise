@@ -13,7 +13,10 @@ out/
 .env
 .env.local
 .env.*.local
+.env.*
 !.env.example
+!.env.*.example
+.compose.*.local.yml
 
 # python
 __pycache__/
