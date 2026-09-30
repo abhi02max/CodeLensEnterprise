@@ -18,10 +18,12 @@ import { useJobPolling } from '@/lib/use-job-polling';
 export function AnalyzeButton({
   pullRequestId,
   size = 'md',
+  label = 'Analyze',
   onComplete,
 }: {
   pullRequestId: string;
   size?: 'sm' | 'md' | 'lg';
+  label?: string;
   onComplete?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -58,6 +60,7 @@ export function AnalyzeButton({
   });
 
   const running = trigger.isPending || job.isRunning;
+  const statusUnavailable = Boolean(handle) && (job.isError || job.isTimedOut);
   const stage = job.job?.progress?.stage;
 
   return (
@@ -66,10 +69,10 @@ export function AnalyzeButton({
         variant="primary"
         size={size}
         loading={running}
-        onClick={() => trigger.mutate()}
-        title={running ? 'Analysis in progress' : 'Run the full review pipeline'}
+        onClick={() => statusUnavailable ? void job.checkStatus() : trigger.mutate()}
+        title={running ? 'Analysis in progress' : statusUnavailable ? 'Check the existing job before starting another' : 'Run the full review pipeline'}
       >
-        {running ? (stage && stage !== 'QUEUED' ? formatStage(stage) : 'Queued…') : 'Analyze'}
+        {running ? (stage && stage !== 'QUEUED' ? formatStage(stage) : 'Queued…') : statusUnavailable ? 'Check status' : label}
       </Button>
 
       {handle && running && (
@@ -81,6 +84,14 @@ export function AnalyzeButton({
       {job.job?.state === 'FAILED' && (
         <span className="text-xs text-red-700">
           {job.job.failedReason ?? 'The analysis job failed'}
+        </span>
+      )}
+
+      {statusUnavailable && (
+        <span className="max-w-[16rem] text-right text-xs text-red-700">
+          {job.isTimedOut
+            ? 'Analysis is taking longer than expected. Check its status before starting another.'
+            : 'Could not check job status. The analysis may still be running.'}
         </span>
       )}
 

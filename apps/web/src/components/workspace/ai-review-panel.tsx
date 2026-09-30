@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { SeverityBadge } from '@/components/risk';
-import { Badge, Button, Card, CardBody, CardHeader } from '@/components/ui/primitives';
+import { Badge, Card, CardBody, CardHeader } from '@/components/ui/primitives';
 import { cents } from '@/lib/format';
 import type { AiReviewStatus, AiReviewView } from '@/lib/types';
 
@@ -23,16 +23,16 @@ const RECOMMENDATION_TONE = {
 export function AiReviewPanel({
   aiReview,
   status,
-  onRetry,
+  retryAction,
   canRetry,
 }: {
   aiReview: AiReviewView | null;
   status: AiReviewStatus;
-  onRetry?: () => void;
+  retryAction?: React.ReactNode;
   canRetry: boolean;
 }) {
   if (!aiReview) {
-    return <AiReviewUnavailable status={status} onRetry={onRetry} canRetry={canRetry} />;
+    return <AiReviewUnavailable status={status} retryAction={retryAction} canRetry={canRetry} />;
   }
 
   return (
@@ -231,11 +231,11 @@ export function AiReviewPanel({
 
 function AiReviewUnavailable({
   status,
-  onRetry,
+  retryAction,
   canRetry,
 }: {
   status: AiReviewStatus;
-  onRetry?: () => void;
+  retryAction?: React.ReactNode;
   canRetry: boolean;
 }) {
   const tone =
@@ -269,10 +269,8 @@ function AiReviewUnavailable({
               rejected API key would waste the user's time and teach them the button is a lie.
             */}
             {status.retryable ? (
-              canRetry && onRetry ? (
-                <Button size="sm" onClick={onRetry}>
-                  Re-run analysis
-                </Button>
+              canRetry && retryAction ? (
+                retryAction
               ) : (
                 <span className="text-xs text-slate-500">
                   Re-running may succeed. Ask someone with analysis permission to trigger it.

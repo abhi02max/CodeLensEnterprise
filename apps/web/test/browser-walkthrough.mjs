@@ -23,9 +23,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const SHOTS = join(here, 'screenshots');
 mkdirSync(SHOTS, { recursive: true });
 
-const WEB = process.env.WEB_URL ?? 'http://localhost:3000';
+const WEB = process.env.WEB_URL;
 const EMAIL = process.env.DEMO_EMAIL ?? 'owner@acme.dev';
-const PASSWORD = process.env.DEMO_PASSWORD ?? 'CodeLensDemo2026';
+const PASSWORD = process.env.DEMO_PASSWORD;
+if (!WEB || !PASSWORD || /localhost:(3000|4000)(?:\/|$)/.test(WEB)) {
+  throw new Error('Set isolated WEB_URL and DEMO_PASSWORD explicitly; default CodeLens ports are refused.');
+}
 const HEADED = process.argv.includes('--headed');
 
 const results = [];
@@ -344,10 +347,16 @@ try {
   await composer.scrollIntoViewIfNeeded();
   const commentText = `Browser QA pass ${new Date().toISOString()}`;
   await composer.fill(commentText);
+  const commentRefresh = page.waitForResponse((response) =>
+    response.url().includes('/review-sessions/') &&
+    response.request().method() === 'GET' &&
+    response.ok(),
+  );
   await page.getByRole('button', { name: 'Comment', exact: true }).click();
-  await page.waitForSelector(`text=${commentText.slice(0, 30)}`, { timeout: 20000 });
+  await commentRefresh;
+  await page.getByText(commentText, { exact: true }).waitFor({ state: 'visible', timeout: 20000 });
 
-  check('comment appears in the thread list', await page.locator(`text=${commentText.slice(0, 30)}`).first().isVisible());
+  check('comment appears in the thread list', await page.getByText(commentText, { exact: true }).isVisible());
   await shoot(page, '07-comment-created');
 
   // Finding-linked comment via the Discuss affordance.
@@ -383,13 +392,18 @@ try {
   await page.waitForSelector('#share-scope');
   check('share form opens', await page.locator('#share-scope').isVisible());
 
+  const createdLinkResponse = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith('/share-link') && response.ok());
+  const linksRefresh = page.waitForResponse((response) => response.request().method() === 'GET' && response.url().includes('/review-sessions/') && response.ok());
   await page.getByRole('button', { name: 'Create link' }).click();
+  const createdLink = await (await createdLinkResponse).json();
+  const sessionWithLink = await (await linksRefresh).json();
+  check('new link is first active link', sessionWithLink.shareLinks.find((link) => !link.revokedAt)?.id === createdLink.id);
   await page.waitForSelector('text=Copy this now', { timeout: 20000 });
   check('one-time URL is shown after creation', await page.locator('text=Copy this now').isVisible());
   await shoot(page, '11-share-link-created');
 
   const sharedHref = await page.getByRole('link', { name: 'Open the shared view' }).getAttribute('href');
-  check('shared view link produced', Boolean(sharedHref), sharedHref ?? '');
+  check('shared view link produced', Boolean(sharedHref?.startsWith('/shared/')));
 
   // ------------------------------------------------------------------ shared view
   section('Shared review (unauthenticated)');
@@ -420,6 +434,11 @@ try {
   await anonPage.screenshot({ path: join(SHOTS, '12-shared-review.png'), fullPage: true });
   console.log('         shot: 12-shared-review.png');
   await anon.close();
+  if (sessionWithLink.shareLinks.find((link) => !link.revokedAt)?.id === createdLink.id) {
+    const revokeResponse = page.waitForResponse((response) => response.request().method() === 'DELETE' && response.url().endsWith(`/share-link/${createdLink.id}`) && response.ok());
+    await page.getByRole('button', { name: 'Revoke' }).first().click();
+    check('created link revoked after viewing', (await (await revokeResponse).json()).id === createdLink.id);
+  }
 
   // ------------------------------------------------------------------ activity
   section('Activity');

@@ -83,6 +83,7 @@ export function CommentsPanel({
     onSuccess: () => {
       setBody('');
       setReplyTo(null);
+      setShowAll(true);
       onClearAnchor();
       refresh();
     },

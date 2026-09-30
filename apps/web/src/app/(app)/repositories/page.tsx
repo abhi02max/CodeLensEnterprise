@@ -55,10 +55,10 @@ export default function RepositoriesPage() {
         </div>
         <Button
           variant="primary"
-          onClick={() => sync.mutate()}
+          onClick={() => jobHandle && (job.isError || job.isTimedOut) ? void job.checkStatus() : sync.mutate()}
           loading={sync.isPending || job.isRunning}
         >
-          {job.isRunning ? 'Syncing…' : 'Sync from GitHub'}
+          {job.isRunning ? 'Syncing…' : job.isError || job.isTimedOut ? 'Check sync status' : 'Sync from GitHub'}
         </Button>
       </div>
 
@@ -190,11 +190,13 @@ function JobPanel({
       <CardHeader
         title="Sync job"
         subtitle={<span className="font-mono text-[0.6875rem]">{handle}</span>}
-        actions={<Badge tone={state.isRunning ? 'info' : state.job?.state === 'FAILED' ? 'danger' : 'success'}>
-          {state.job?.state ?? 'QUEUED'}
+        actions={<Badge tone={state.isError || state.isTimedOut || state.job?.state === 'FAILED' ? 'danger' : state.isRunning ? 'info' : 'success'}>
+          {state.isError || state.isTimedOut ? 'STATUS UNKNOWN' : state.job?.state ?? 'QUEUED'}
         </Badge>}
       />
       <div className="px-4 py-3 text-xs text-slate-600">
+        {state.isError && <p className="text-red-700">Could not check the sync job. It may still be running.</p>}
+        {state.isTimedOut && <p className="text-red-700">Sync is taking longer than expected. Check its status before starting another.</p>}
         {state.job?.progress?.message && <p>{state.job.progress.message}</p>}
 
         {state.job?.state === 'COMPLETED' && result && (

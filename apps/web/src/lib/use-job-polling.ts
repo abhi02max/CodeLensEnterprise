@@ -6,6 +6,7 @@ import { api } from './api';
 import type { JobStatus } from './types';
 
 const TERMINAL_STATES = new Set<JobStatus['state']>(['COMPLETED', 'FAILED']);
+const MAX_POLL_DURATION_MS = 15 * 60 * 1000;
 
 /**
  * Poll a background job until it reaches a terminal state.
@@ -22,12 +23,20 @@ export function useJobPolling(
   options: { onSettled?: (job: JobStatus) => void; intervalMs?: number } = {},
 ) {
   const settledFor = React.useRef<string | null>(null);
+  const [timedOutFor, setTimedOutFor] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!handle) return;
+    const timeout = window.setTimeout(() => setTimedOutFor(handle), MAX_POLL_DURATION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [handle]);
 
   const query = useQuery({
     queryKey: ['job', handle],
     queryFn: () => api.job(handle as string),
     enabled: Boolean(handle),
     refetchInterval: (query) => {
+      if (query.state.status === 'error' || timedOutFor === handle) return false;
       const state = query.state.data?.state;
       if (state && TERMINAL_STATES.has(state)) return false;
       return options.intervalMs ?? 900;
@@ -38,6 +47,7 @@ export function useJobPolling(
   });
 
   const job = query.data ?? null;
+  const isTimedOut = Boolean(handle) && timedOutFor === handle && (!job || !TERMINAL_STATES.has(job.state));
 
   React.useEffect(() => {
     if (!job || !handle) return;
@@ -58,7 +68,9 @@ export function useJobPolling(
 
   return {
     job,
-    isRunning: Boolean(handle) && (!job || !TERMINAL_STATES.has(job.state)),
+    isRunning: Boolean(handle) && !query.isError && !isTimedOut && (!job || !TERMINAL_STATES.has(job.state)),
     isError: query.isError,
+    isTimedOut,
+    checkStatus: query.refetch,
   };
 }

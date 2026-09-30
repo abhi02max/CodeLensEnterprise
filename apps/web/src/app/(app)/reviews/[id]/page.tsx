@@ -197,18 +197,23 @@ export default function ReviewWorkspacePage() {
           from the main path — showed the "Not analysed yet" call-out followed by four more cards
           each repeating that there is nothing to show. Discussion, the merge gate, the verdict
           controls, sharing and activity all work without a run, so those stay. */}
-      <div className="grid gap-3 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
         <div className="space-y-3 xl:col-span-2">
           {data.analyzed && (
             <AiReviewPanel
               aiReview={data.aiReview}
               status={data.aiReviewStatus}
               canRetry={permissions.canTriggerAnalysis}
-              onRetry={() => {
-                void api.analyze(sessionId, true).then(() => {
-                  void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
-                });
-              }}
+              retryAction={
+                <AnalyzeButton
+                  pullRequestId={sessionId}
+                  size="sm"
+                  label="Re-run analysis"
+                  onComplete={() =>
+                    void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] })
+                  }
+                />
+              }
             />
           )}
 

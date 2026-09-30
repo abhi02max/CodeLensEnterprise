@@ -44,6 +44,7 @@ export function SharePanel({
   const [created, setCreated] = React.useState<{ url: string; token: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const passphraseTooShort = passphrase.length > 0 && passphrase.trim().length < 8;
 
   const create = useMutation({
     mutationFn: () =>
@@ -51,7 +52,7 @@ export function SharePanel({
         scope,
         expiresInHours: hours,
         redactCode,
-        ...(passphrase.trim().length >= 8 ? { passphrase: passphrase.trim() } : {}),
+        ...(passphrase.trim() ? { passphrase: passphrase.trim() } : {}),
       }),
     onMutate: () => setError(null),
     onSuccess: (link) => {
@@ -146,12 +147,19 @@ export function SharePanel({
             <Label htmlFor="share-passphrase">Passphrase (optional, min 8 characters)</Label>
             <Input
               id="share-passphrase"
-              type="text"
+              type="password"
               className="mt-1"
               value={passphrase}
               onChange={(event) => setPassphrase(event.target.value)}
+              aria-invalid={passphraseTooShort || undefined}
+              aria-describedby={passphraseTooShort ? 'share-passphrase-error' : undefined}
               placeholder="Leave blank for no passphrase"
             />
+            {passphraseTooShort && (
+              <p id="share-passphrase-error" className="mt-1 text-xs text-red-700">
+                Use at least 8 characters, or leave this blank.
+              </p>
+            )}
           </div>
 
           <label className="flex items-center gap-2 text-xs text-slate-700">
@@ -166,7 +174,7 @@ export function SharePanel({
 
           {error && <Alert tone="danger">{error}</Alert>}
 
-          <Button variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
+          <Button variant="primary" loading={create.isPending} disabled={passphraseTooShort} onClick={() => create.mutate()}>
             Create link
           </Button>
 
