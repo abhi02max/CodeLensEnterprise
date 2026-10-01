@@ -71,6 +71,47 @@ describe('authoritative review run', () => {
     })).rejects.toThrow(/head changed/);
   });
 
+  it('releases the analysis lock when run creation fails before pipeline execution', async () => {
+    const releaseLock = vi.fn().mockResolvedValue(undefined);
+    const prisma = db(vi.fn()) as PrismaService & { unscoped: any };
+    prisma.unscoped.reviewRun.findUnique = vi.fn().mockResolvedValue(null);
+    prisma.unscoped.reviewRun.create = vi.fn().mockRejectedValue(new Error('database write failed'));
+    const service = new AnalysisService(prisma,
+      { consumeRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+        acquireLock: vi.fn().mockResolvedValue('owner-token'), releaseLock } as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    await expect(service.run({ organizationId: 'org-1', pullRequestId: pr.id,
+      userId: 'user-1', userRole: Role.REVIEWER, traceId: 'trace-1',
+      trigger: RunTrigger.USER, force: true, postToGithub: false,
+    })).rejects.toThrow('database write failed');
+    expect(releaseLock).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledWith(expect.stringContaining('analysis:lock:'), 'owner-token');
+  });
+
+  it('marks a created ReviewRun failed when pre-pipeline setup rejects', async () => {
+    const releaseLock = vi.fn().mockResolvedValue(undefined);
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = db(vi.fn()) as PrismaService & { unscoped: any };
+    prisma.unscoped.reviewRun.findUnique = vi.fn().mockResolvedValue(null);
+    prisma.unscoped.reviewRun.create = vi.fn().mockResolvedValue({ id: 'run-1' });
+    prisma.unscoped.reviewRun.update = update;
+    const service = new AnalysisService(prisma,
+      { consumeRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+        acquireLock: vi.fn().mockResolvedValue('owner-token'), releaseLock } as never,
+      {} as never, { record: vi.fn().mockResolvedValue(undefined) } as never,
+      { getAiSettings: vi.fn().mockRejectedValue(new Error('policy unavailable')) } as never,
+      {} as never, { create: vi.fn(), release: vi.fn() } as never, {} as never);
+    await expect(service.run({ organizationId: 'org-1', pullRequestId: pr.id,
+      userId: 'user-1', userRole: Role.REVIEWER, traceId: 'trace-1',
+      trigger: RunTrigger.USER, force: true, postToGithub: false,
+    })).rejects.toThrow('policy unavailable');
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'run-1' }, data: expect.objectContaining({ status: ReviewRunStatus.FAILED }),
+    }));
+    expect(releaseLock).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledWith(expect.stringContaining('analysis:lock:'), 'owner-token');
+  });
+
   it('keys queued work to the latest terminal generation for this head and version', async () => {
     const findRun = vi.fn().mockResolvedValue({ id: 'latest-terminal' });
     const enqueueAnalysis = vi.fn().mockResolvedValue({ id: 'job-1' });

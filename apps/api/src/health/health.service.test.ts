@@ -23,6 +23,13 @@ afterEach(() => {
 });
 
 describe('bounded readiness', () => {
+  it('reports down immediately once shutdown draining begins', async () => {
+    const check = service(vi.fn(), vi.fn());
+    check.markDraining();
+    expect(await check.overall()).toMatchObject({
+      status: 'down', checks: [{ name: 'shutdown', ok: false, required: true }],
+    });
+  });
   it('reports a hung required Redis probe as down', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
