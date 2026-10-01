@@ -44,6 +44,12 @@ export function SharePanel({
   const [created, setCreated] = React.useState<{ url: string; token: string } | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const copyGeneration = React.useRef(0);
+  React.useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
   const passphraseTooShort = passphrase.length > 0 && passphrase.trim().length < 8;
 
   const create = useMutation({
@@ -56,6 +62,8 @@ export function SharePanel({
       }),
     onMutate: () => setError(null),
     onSuccess: (link) => {
+      copyGeneration.current += 1;
+      setCopied(false);
       setCreated({ url: link.url, token: link.token });
       setPassphrase('');
       void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
@@ -186,11 +194,18 @@ export function SharePanel({
                 </code>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(created.url).then(() => {
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    });
+                  onClick={async () => {
+                    const generation = ++copyGeneration.current;
+                    setError(null);
+                    setCopied(false);
+                    try {
+                      await navigator.clipboard.writeText(created.url);
+                      if (generation === copyGeneration.current) setCopied(true);
+                    } catch {
+                      if (generation === copyGeneration.current) {
+                        setError('Could not copy the link. Copy it manually.');
+                      }
+                    }
                   }}
                 >
                   {copied ? 'Copied' : 'Copy'}

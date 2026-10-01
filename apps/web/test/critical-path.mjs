@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
+if (process.argv.includes('--evidence-closure')) {
+  await import('./evidence-closure.mjs');
+  process.exit(process.exitCode || 0);
+}
+
 const web = process.env.WEB_URL?.replace(/\/$/, '');
 const api = process.env.API_URL?.replace(/\/$/, '');
 const password = process.env.DEMO_PASSWORD;
