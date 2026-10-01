@@ -1,6 +1,10 @@
 # Verification and Claim Audit
 
-Evidence checkpoint: Phase 2F, 2026-09-30, based on HEAD
+Latest checkpoint: Phase 2G-B, 2026-10-01, based on HEAD
+`b32a10b40cf9d0adcbdffca6140d818d98655c90` plus the uncommitted evidence/copy-failure diff.
+See the Phase 2G-B section below. No Phase 2G-B commit is claimed.
+
+Historical evidence checkpoint: Phase 2F, 2026-09-30, based on HEAD
 `c2546d3e24069b3f5e873a2ca97abbeafd3b2cb9` plus the uncommitted hardening diff.
 No Phase 2F commit or hosted Actions run is claimed here.
 
@@ -326,7 +330,8 @@ claim paid integrations, exhaustive security coverage or production scale.
 | Repository indexing | RUNTIME PROVEN | Phase 2C real package path with deterministic embeddings; not live GitHub |
 | pgvector retrieval | RUNTIME PROVEN | Phase 2C vector queries; synthetic embedding boundary |
 | Lexical retrieval | RUNTIME PROVEN | Database FTS retrieval and demo context |
-| Hybrid retrieval/MMR | PARTIAL | Hybrid queries runtime-proven; MMR has no separately recorded runtime proof |
+| Hybrid retrieval | REAL / PROVEN MECHANICS | Implemented, deterministic-test and database/runtime proven; semantic quality UNVALIDATED |
+| MMR selection | REAL / PROVEN MECHANICS | Implemented, deterministic-test and runtime selection proven; semantic quality UNVALIDATED |
 | RAG provenance | RUNTIME PROVEN | Phase 2C truthful source/score evidence |
 | AI orchestration | RUNTIME PROVEN | Provider double and no-provider pipeline |
 | Structured validation/repair | RUNTIME PROVEN | Phase 2C controlled provider errors/repair |
@@ -345,6 +350,153 @@ claim paid integrations, exhaustive security coverage or production scale.
 | Worker recovery | PARTIAL | Same-job transient retry and queued restart runtime-proven; forced-stop/lock-expiry recovery unverified |
 | Observability | PARTIAL | IDs correlate logs and persistence; no platform/metrics tracing |
 | Graceful active-job shutdown | PARTIAL | Active SIGTERM drain and waiting-job isolation runtime-proven; deadline overrun not runtime-proven |
+
+## Phase 2G-B Retrieval and UX Evidence
+
+### Retrieval Path and Contracts
+
+- `packages/rag-engine/src/retriever.ts`: `HybridRetriever.retrieve` attempts
+  query embedding, runs the independent candidate strategies, calls
+  `fuseCandidates`, hydrates candidates, sorts fused relevance, applies
+  `maximalMarginalRelevance`, then applies the token budget.
+- `packages/rag-engine/src/pgvector-store.ts`: `search` returns non-null embedded
+  rows ordered by cosine distance with raw score `1 - distance`. A VECTOR hit
+  means this query returned the row, not that semantic relevance was validated.
+  `searchLexical` uses English FTS OR queries from sanitized identifiers and
+  `ts_rank` over the generated weighted search vector. Import metadata and
+  conventional paths supply the other two strategies.
+- Each source normalizes `max(0, rawScore) / max(sourceMaximum, epsilon)`;
+  weights are VECTOR 1, LEXICAL .85, IMPORT_GRAPH .55, CONVENTION .6.
+  IDs are fused once, retaining every contributing source and raw vector/lexical
+  score. Each additional contributing strategy uses `max(existing, weighted)
+  plus .12`, in the fixed strategy order. This is not a probability or RRF;
+  agreement can produce fused scores above 1. Negative cosine remains in
+  `vectorScore`, but contributes zero negative relevance.
+- MMR seeds the highest fused-relevance candidate from the sorted input, then
+  maximizes `lambda * relevance - (1 - lambda) * maxSimilarityToSelected`.
+  Same-path similarity is .9; equal-length stored embeddings use cosine;
+  missing/mismatched embeddings use identifier-token Jaccard overlap. The
+  maximum penalty starts at zero, so negative similarity supplies no reward.
+  Equal objectives preserve input order; equal database relevance is not a
+  promised cross-query ID ordering. The query embedding argument is unused in
+  MMR: fused relevance already represents query relevance.
+- If query embedding fails, vector search is not invoked. Lexical, graph and
+  convention retrieval remain available, without invented VECTOR evidence.
+- `apps/api/src/rag/rag.service.ts`: `buildPrContext` retrieves per changed file
+  and a separate repository overview. `persistRetrievedContext` snapshots
+  chunk identity/path/symbol/kind/content/lines/tokens, fused score, raw
+  vector/lexical scores, source labels, rationale, file association and selected
+  rank. Scores are rounded to four decimals before persistence. The stored
+  score is fused relevance, not the transient MMR objective; rank records MMR
+  selection order. Neither embeddings nor candidate counts are persisted.
+  `getRunContext` selects the authoritative run; GET
+  `/pull-requests/:id/rag-context` exposes full snapshots. Review-session readback
+  exposes a compact context summary from the same authoritative run via
+  `AnalysisReportService` and `summarizeRagContext`.
+
+### Deterministic and Runtime Proof
+
+Eight focused tests were added to `retriever.test.ts`: overlapping IDs/source
+preservation, intentionally disparate score scales, all four sources, lexical
+fallback, lambda=1 relevance order, diversity selection, fewer-than-k/empty,
+missing/mixed embeddings and defined ties (some cases share one test).
+The existing negative-score test remains. RAG total: 17 tests.
+The normalization case ranks vector-only B (.875) above lexical-only C (.765)
+despite raw scores .7 versus 900; overlapping A is one result with both sources.
+The diversity test must choose A/C rather than A/B and would fail if MMR were
+bypassed.
+
+Runtime used only `codelens_phase2f_20260930`, PostgreSQL/Redis volumes with that
+project prefix, and ports web 23000/API 24000/ML 28000. The mounted,
+NODE_ENV=test/project-guarded `apps/api/test/retrieval-evidence.cjs` is excluded
+from images by `.dockerignore`. It creates synthetic fixtures in a separate
+repository, uses real PgVectorStore/HybridRetriever queries, and removes its
+repository and temporary demo-repository chunks in cleanup. Only its test
+process substitutes deterministic 1536-D query embeddings; no production hook
+or provider configuration is installed.
+
+Final runtime fixture IDs: `mechanics-mup0cmo3-{A,B,C,N}`.
+Candidate counts: VECTOR 4, LEXICAL 1, IMPORT_GRAPH 3, CONVENTION 1; fused IDs 4.
+A retained all four source labels, raw vector 1, lexical .6383, fused 1.36.
+B had vector/import sources, raw vector .9992, fused 1.1192; C had vector/import
+sources, raw vector .5, fused .67. Lambda=1 selected A/B; lambda=.5 selected A/C.
+After A, marginal objectives were approximately B .06 and C .085. N retained
+raw vector -1 with fused relevance 0. Controlled embedding failure returned
+no vector candidates or vector provenance.
+
+A new BullMQ job produced run `cmup0cmqp0003pr01hhij39yr`, persisting 22 context
+snapshots. Full context API readback matched every persisted source/raw/fused
+score and selected the same run as the review-session API. Across those rows,
+all four source strategies survived; negative raw vector similarity remained
+auditable with nonnegative fused relevance, and IDs/ranks matched exactly.
+The production worker was stopped only
+in this isolated project while the test worker consumed the job and was restored
+in finally. The queued run used the real pipeline with a test-only embedding
+provider; it is not real-provider or semantic-quality evidence.
+
+Hybrid and MMR independently: IMPLEMENTED, AUTOMATED-TEST PROVEN, RUNTIME PROVEN
+for mechanics. Semantic quality: UNVALIDATED. Synthetic vectors prove neither
+optimal context nor improved review quality, retrieval benchmarks or scale.
+
+### Browser Proof and Correction
+
+`critical-path.mjs --evidence-closure` runs a focused browser mode, refusing all
+URLs except the isolated pair and intercepting off-target API requests before
+delivery. User interaction uses Tab/Enter/Space/Home/End/type only, not mouse,
+locator focus or click. Chromium/installed Chrome at 1280x900 exercised sign-in,
+PR navigation, review workspace, fresh Analyze, comments, both verdict controls,
+share creation/copy and closing the inline share panel. Critical controls had
+visible computed focus styling; no unexpected focus trap or unnamed visible
+icon-only button was found. This is keyboard-path sanity, not WCAG certification
+or screen-reader/contrast/mobile accessibility coverage.
+
+Browser clipboard interception proved FULL -> SUMMARY -> FULL creates/copies
+each newly returned URL exactly, not a previous URL; passphrases are absent from
+the URL. Values are compared in memory and never printed. Test links were revoked
+in finally. No JS or unexpected network errors remained in the final runs.
+
+Demonstrated product defect: clipboard rejection originally caused one uncaught
+JS error and no feedback. The only production correction is
+`share-panel.tsx`: catch denial/unavailable clipboard, display truthful manual-copy
+feedback, reset copy confirmation for each new link, discard stale asynchronous
+copy settlements, and clean up the confirmation timer. The browser mode proves
+successful copies and denial feedback without uncaught errors on the rebuilt
+isolated web image.
+
+Controlled isolated ML outage: fresh run `cmup050k0001cs901fysaz63u` COMPLETED;
+prior run `cmup02vva0001s901pjje2api` had score 91, current risk was null, not zero
+or stale. UI displayed "No risk prediction" and the run-specific no-score
+explanation, with no ML-score heading. Four static findings and nine RAG context
+rows remained. AI was SKIPPED with matching UI (no provider key configured).
+Gate remained blocked without stale risk-score warnings; Analyze and collaboration
+controls remained keyboard-usable. ML was restored in finally and health checked.
+Both normal and outage browser flows also passed the copy/keyboard checks.
+
+Verification setup correction: the first web rebuild omitted the isolated
+NEXT_PUBLIC_API_URL build argument and sign-in timed out due to the default
+API URL. The corrected build explicitly used localhost:24000/api/v1. Read-only
+original-database checks found zero recent `user.logged_in` events and unchanged
+demo-owner lastActiveAt (2026-09-24); no successful original sign-in occurred.
+The browser guard now blocks wrong-origin calls before delivery. This was an
+isolation build-command error, not a production feature defect. No original
+container, volume, schema or data was intentionally modified.
+The explicit build argument is retained in the ignored local
+`.compose.phase2g.local.yml` override; that verification-only file must not be
+committed.
+
+Final local checks: root pnpm test 90 passed (database 6, static 11, RAG 17,
+AI 18, API 38); workspace typecheck, RAG build, web build and isolated web image
+build passed. Focused real retrieval/queue/readback and both browser runs passed.
+JavaScript syntax checks and git diff --check passed.
+No API production change required an API rebuild. Applied 0_baseline is unchanged.
+Read-only source hashes matched the checkout for API/worker retrieval and the
+deployed web copy correction. The isolated web image digest was
+`sha256:8be1edd78f3a75e016eecbbecfce8039b543f44cec05617cf6b4bc7ceda85ddd`;
+API image `sha256:4d03144ea680b3f4bda80e3c3bb9582e968dfecb6e9ea305efc1de3b08f5a280`;
+worker image `sha256:7525bfdabe8f13f7f3452b7ce041fe66105c7b1989902d82609f965ae259064e`.
+No provider credentials, local isolation files or generated browser artifacts
+are commit content. Prettier/Ruff debt and external GitHub/provider/hosted-CI
+boundaries above remain unchanged. No Phase 2G-C work or commit is claimed.
 
 ## Completion Estimate
 
