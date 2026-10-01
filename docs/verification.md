@@ -498,6 +498,135 @@ No provider credentials, local isolation files or generated browser artifacts
 are commit content. Prettier/Ruff debt and external GitHub/provider/hosted-CI
 boundaries above remain unchanged. No Phase 2G-C work or commit is claimed.
 
+## Phase 2G-C1: Synthetic Credential Safety (2026-10-01)
+
+Base commit: `bd6c562fa7e7bacb232165b07e5696ada330df3e`. No real credentials or
+external GitHub/provider requests were used. The original Docker project and
+`0_baseline` were not modified.
+
+OAuth previously signed `{ nonce, issuedAt, ...payload }` using HMAC-SHA256 and
+accepted it for ten minutes, but did not bind it to a browser or consume it.
+The corrected state includes immutable nonce/issued/expiry fields. Redis holds
+a ten-minute record containing local user/generation/organization context and
+the SHA-256 binding of a random HttpOnly browser-cookie value plus the initiating
+refresh cookie. A single Lua operation checks the binding and deletes the record.
+Wrong-browser/session callbacks do not consume a valid record. Redis errors fail
+closed, unlike best-effort cache helpers. Replay/denial requires a fresh flow.
+Local link mode requires a valid, non-revoked refresh session; optional access
+identity must match. Callback rechecks local token generation. Sign-in no longer
+auto-links a different GitHub identity merely because its email matches a local
+account. New account creation uses only verified GitHub email addresses.
+
+The callback sets the existing HttpOnly refresh cookie and redirects to the fixed
+`/auth/callback` route with an allowlisted outcome, never an access-token fragment.
+Frontend session recovery uses `/auth/refresh` and `/auth/session`; success is
+shown only for an authenticated connected account. Denial/invalid/provider failure
+have fixed messages and retry/sign-in navigation. Arbitrary redirect targets and
+provider error descriptions are not forwarded. The outcome query is removed after
+hydration. Same-site API/web deployment and HTTPS secure cookies remain required.
+
+Synthetic tests capture exception log arguments/client bodies, nested tool metadata,
+embedding indexing progress, provider errors, and browser/application diagnostics.
+Query/fragment values are omitted from exception paths; recognized assignments,
+bearer credentials, share URLs, known request/environment secrets and nested secret
+fields are sanitized. Ordinary validation text and token-usage counts remain useful.
+Upstream bodies and parser/transport messages are not error diagnostics; LLM machine
+categories use an explicit allowlist. AES-256-GCM remains unchanged, with fresh
+96-bit IVs, authenticated tags, strict key validation and tampering/wrong-key tests.
+Local disconnect deletes stored credentials; upstream authorization revocation is
+a separate operator action. JavaScript cannot guarantee plaintext memory zeroization.
+
+`pnpm build:packages`, API/web builds, workspace typecheck and root tests were run.
+The focused browser harness is `node apps/web/test/oauth-safety.mjs`, after package
+and API builds. It owns dedicated loopback ports 23400/24400, uses a test-only Nest
+server with fake database/GitHub/Redis dependencies and runs the real auth classes,
+JWT issuance, encryption and frontend. It intercepts the backend authorize redirect
+before any GitHub navigation. Success, repositories navigation, denial, replay and
+invalid state passed; captured diagnostic marker occurrences were zero. It does not
+dump storage/headers or produce screenshots/traces. Test drivers are excluded by
+the existing Docker context rules; production entry points contain no test hooks.
+
+### Container and Real Redis Closure
+
+Docker Desktop access was restored using its explicit executable path and host
+execution approval. A new project, `codelens_c1_20261001`, used only new volumes
+`codelens_c1_20261001_postgres_data` and `codelens_c1_20261001_redis_data`.
+The original project was inspected read-only, not restarted or modified.
+The fresh database applied the immutable `0_baseline`; a subsequent initialization
+reported managed state and no pending migrations. No demo seed was run.
+
+API and web images built the final uncommitted production sources. Eleven source
+SHA-256 comparisons matched the working tree, including OAuth state/controller,
+auth, GitHub client/exchange, redactor, provider adapters and all three changed web
+entry points. API image ID:
+`sha256:2dbb922fc29a2dbf5ad45ecdb58909d1029fbf57e4c49a44ac7485837f992e4f`.
+Web image ID:
+`sha256:1729ffbfb15089567b8e0f5c691d174fe04ce12bb990bfac1d48245c469ff4f7`.
+Test directories were absent in both images. Synthetic upstream responses were
+supplied only by an explicitly mounted test-only preload in the isolated API.
+Normal production entry points contain no preload or synthetic provider switch.
+No real credentials or external GitHub/provider calls were used.
+
+The real Redis driver exercised the compiled OAuthStateService, not a fake adapter.
+Nonce TTL was 600 seconds. Correct ownership consumed once; replay, tampering,
+expiry, missing nonce, wrong browser and wrong initiating refresh binding failed.
+Wrong bindings left the valid record available to its owner. Sixty-four simultaneous
+consume attempts yielded exactly one success and 63 rejections; the nonce was absent
+afterward. These observations prove the tested Lua mechanics, not exactly-once
+processing of all external side effects.
+
+Chromium used the actual container API/web at loopback ports 34400/33400. PostgreSQL
+and Redis remained on an internal-only network without published host ports.
+An initial isolation-only mistake used that network for API/web too, which prevented
+host access despite configured ports. Adding a host-facing network only to API/web
+resolved it. The browser intercepted the API authorize redirect before GitHub
+navigation; the API preload blocked unmatched external fetch requests.
+
+Real database/Redis callback completion, HttpOnly refresh-cookie recovery, connected
+UI and repositories navigation passed. Denial, invalid state and replay produced
+fixed frontend states; the hydrated callback URL was `/auth/callback`, with no query
+or credential fragment. The production-mode browser-binding cookie was HttpOnly,
+Secure and SameSite=Lax. Loopback acceptance of Secure cookies does not replace
+deployment HTTPS requirements.
+
+Verified email matching an existing local user was rejected for anonymous linking;
+the authenticated owner then explicitly linked that identity. An unverified email
+did not create/link a user. A new verified identity created a separate user/account.
+Mismatched access/refresh local identities were rejected. Final state had three
+synthetic users and two GitHub accounts, with the expected owners; replay introduced
+no additional account. Both persisted credentials were encrypted, decrypted through
+TokenCryptoService to their intended synthetic values, and re-encryption produced
+distinct ciphertexts and IVs. This proves AES-GCM mechanics, not HSM key management.
+
+Stopping only isolated Redis made initiation return HTTP 500 and a previously issued
+callback redirect to the fixed invalid outcome. A repeated outage check compared
+Account IDs, owners and encrypted credentials before/after: unchanged. Redis was
+restored and responded PONG. No unbound-state fallback or partial account was created.
+
+Unique code/state/authorization/provider-body/provider-code markers were exercised.
+Browser diagnostics and returned errors had zero occurrences. A container script
+used the compiled RagService, real Prisma/Redis/vector store and AuditService with
+synthetic source/policy dependencies: rejected embedding requests persisted sanitized
+errors into IndexRun, Repository and audit rows. Compiled OpenAI/Anthropic LLM adapters
+also rejected marker-bearing bodies safely through the normal tool logger. No new
+queued AI review or LLM ToolRun persistence is claimed by that script. Captured API
+and web logs (180/8 lines at the recorded scan) contained zero supplied secret markers.
+
+Final root regression: 120 tests passed (API 55, RAG 19, AI 21, GitHub 7, static
+analysis 11, database 6, shared 1). Workspace typecheck, API/web builds, isolated
+Docker API/web builds and diff whitespace checks passed. Container drivers:
+`apps/api/test/oauth-redis-runtime.cjs`, `oauth-diagnostic-runtime.cjs`, and
+`apps/web/test/oauth-container.mjs` (full mode requires initially unconnected C1
+fixtures; `--outage-only` repeats outage/account verification). They require explicit
+C1 isolation configuration, not the default Compose project.
+
+LIMITATIONS: No real OAuth, real provider, universal secret non-leakage, penetration
+test or complete security audit is claimed. Proxy/access logs and arbitrary
+unrecognized secrets require separate deployment review. Parallel OAuth tabs/session
+refresh changes can invalidate an earlier flow and require retry. Real external
+GitHub/provider proof remains EXTERNAL-CREDENTIAL BLOCKED. This narrow project does
+not include ML or a worker and does not establish new analysis/retrieval evidence.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.
