@@ -132,6 +132,48 @@ BullMQ defaults are 30s stalled checks and one allowed stall. Completed jobs are
 retained for up to one day/1000 entries and failed jobs seven days/1000 entries;
 these are bounded diagnostics, not an indefinite archive.
 
+### Phase 2G-A Runtime Reliability Update (2026-09-30)
+
+The shutdown statements above describe the Phase 2F checkpoint. Phase 2G-A
+replaced Nest signal-hook ordering with an explicit sequence: mark draining,
+pause BullMQ workers, wait for active work, close workers and queues, then close
+Nest application dependencies (including Prisma and Redis). The default active
+drain budget is 180 seconds, followed by up to 10 seconds for cleanup; Compose
+grants 200 seconds. Operators changing the drain budget must also increase the
+Compose grace period so it remains greater than drain plus cleanup.
+The remaining 10 seconds allow for signal delivery and process scheduling.
+
+In isolated project `codelens_phase2f_20260930`, a real review-run job failed
+transiently before analysis, became delayed for the configured 30-second backoff,
+and completed on its second attempt with the same BullMQ job ID. The API returned
+the single completed authoritative run, with no active orphan. A separate
+two-job SIGTERM test showed job A retaining working PostgreSQL and Redis
+connections after drain began and completing within the budget; job B stayed
+waiting until a replacement worker consumed it. The final image also passed an
+idle SIGTERM smoke test after explicit queue closure was added. Focused tests
+cover timeout, failed cleanup, repeated shutdown, and terminal-run handling.
+BullMQ pause is local to the draining worker, not queue-global. It sets the
+worker's paused flag asynchronously; a job acquired in the tiny interval from
+signal delivery to that flag may still start and become part of the active drain.
+The observed B-waiting result is evidence for that run, not a mathematical
+guarantee that no job can be acquired in this interval.
+
+If an active job exceeds the budget, the worker attempts a bounded forced close
+and exits nonzero without first disconnecting Prisma or Redis from an active
+processor. BullMQ's stalled-job recovery remains available, but deadline-overrun
+runtime recovery, host-level SIGKILL behavior, immediate stalled recovery, and
+external side-effect exactly-once behavior were not proven. A prior
+run's ID is carried across retries so an abandoned RUNNING row can be marked
+FAILED before a new attempt; Redis lock expiry can still delay reprocessing.
+Analysis locks now use per-acquisition tokens and atomic compare-and-delete so
+an expired owner's cleanup cannot remove a replacement owner's lock.
+
+The isolated image recreation initially omitted `--env-file .env.phase2.local`
+and therefore received Compose's default database password. No data was changed;
+recreation with the isolated env file recovered the stack. Every isolated
+Compose invocation must supply both its project name and env file; the project
+name alone does not select its credentials.
+
 Images install from the frozen lockfile, but base tags are not digest-pinned.
 API/web retain development dependencies and run as root; ML runs non-root.
 Root `.dockerignore` excludes secret env files. This is local/portfolio deployment,
@@ -300,9 +342,9 @@ claim paid integrations, exhaustive security coverage or production scale.
 | Graceful degradation | RUNTIME PROVEN | No-provider state; outage readiness check |
 | Responsive browser workflow | RUNTIME PROVEN | Critical path and walkthrough; not full WCAG |
 | CI | IMPLEMENTED / NOT EXTERNALLY VERIFIED | Local checks pass; hosted run pending |
-| Worker recovery | PARTIAL | Queued restart proven; transient retry/crash drain pending |
+| Worker recovery | PARTIAL | Same-job transient retry and queued restart runtime-proven; forced-stop/lock-expiry recovery unverified |
 | Observability | PARTIAL | IDs correlate logs and persistence; no platform/metrics tracing |
-| Graceful active-job shutdown | PARTIAL | Hooks implemented; exhaustive runtime drain not proven |
+| Graceful active-job shutdown | PARTIAL | Active SIGTERM drain and waiting-job isolation runtime-proven; deadline overrun not runtime-proven |
 
 ## Completion Estimate
 
