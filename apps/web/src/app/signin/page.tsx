@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { Github } from 'lucide-react';
 import * as React from 'react';
 import { Alert, Button, Input, Label } from '@/components/ui/primitives';
 import { ApiError, API_URL } from '@/lib/api-client';
@@ -152,6 +153,11 @@ export default function SignInPage() {
             {hydrated ? 'Sign in' : 'Loading…'}
           </Button>
         </form>
+
+        <Button className="mt-3 w-full" disabled={!hydrated} onClick={() => window.location.assign(`${API_URL}/auth/github`)}>
+          <Github className="h-4 w-4" aria-hidden="true" />
+          Sign in with GitHub
+        </Button>
 
         <p className="mt-3 text-center font-mono text-[0.6875rem] text-slate-400">
           API {API_URL}

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import { Github } from 'lucide-react';
 import * as React from 'react';
 import {
   Alert,
@@ -13,7 +14,8 @@ import {
   Skeleton,
 } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
-import { ApiError } from '@/lib/api-client';
+import { ApiError, API_URL } from '@/lib/api-client';
+import { useSession } from '@/lib/providers';
 import { relativeTime } from '@/lib/format';
 import { useJobPolling } from '@/lib/use-job-polling';
 
@@ -27,6 +29,7 @@ const INDEX_TONE = {
 } as const;
 
 export default function RepositoriesPage() {
+  const { user } = useSession();
   const queryClient = useQueryClient();
   const repos = useQuery({ queryKey: ['repositories'], queryFn: () => api.repositories(1, 100) });
 
@@ -53,6 +56,7 @@ export default function RepositoriesPage() {
             Connected repositories and their retrieval index state.
           </p>
         </div>
+        {!user?.githubConnected && <Button onClick={() => window.location.assign(`${API_URL}/auth/github?mode=link`)}><Github className="h-4 w-4" aria-hidden="true" />Connect GitHub</Button>}
         <Button
           variant="primary"
           onClick={() => jobHandle && (job.isError || job.isTimedOut) ? void job.checkStatus() : sync.mutate()}
