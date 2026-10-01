@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import type { ToolLogger } from '@codelens/shared';
+import { sanitizeDiagnosticText, sanitizeDiagnosticValue, type ToolLogger } from '@codelens/shared';
 
 /**
  * Adapter from the Nest logger to the {@link ToolLogger} interface the packages
@@ -42,7 +42,9 @@ export class NestToolLogger implements ToolLogger {
   }
 
   private format(message: string, meta?: Record<string, unknown>): string {
-    const merged = { ...this.bindings, ...meta };
+    const secrets = Object.entries(process.env).filter(([key]) => /(?:SECRET|TOKEN|API_KEY|ENCRYPTION_KEY|PASSWORD)$/.test(key)).map(([, value]) => value ?? '');
+    message = sanitizeDiagnosticText(message, secrets);
+    const merged = sanitizeDiagnosticValue({ ...this.bindings, ...meta }, secrets) as Record<string, unknown>;
     const keys = Object.keys(merged);
 
     if (keys.length === 0) return message;

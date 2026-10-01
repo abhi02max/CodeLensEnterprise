@@ -123,13 +123,13 @@ export function classifyGithubError(error: unknown): GithubError {
     }
 
     if (status === 409) {
-      return new GithubError('CONFLICT', message, status, null, docUrl);
+      return new GithubError('CONFLICT', 'GitHub reported a resource conflict', status, null, docUrl);
     }
 
     if (status === 422) {
       return new GithubError(
         'VALIDATION_FAILED',
-        `GitHub rejected the request: ${message}`,
+        'GitHub rejected the request (HTTP 422)',
         status,
         null,
         docUrl,
@@ -137,23 +137,27 @@ export function classifyGithubError(error: unknown): GithubError {
     }
 
     if (status >= 500) {
-      return new GithubError('SERVER_ERROR', `GitHub server error: ${message}`, status, 5, docUrl);
+      return new GithubError('SERVER_ERROR', `GitHub server error (HTTP ${status})`, status, 5, docUrl);
     }
 
-    return new GithubError('UNKNOWN', message, status, null, docUrl);
+    return new GithubError('UNKNOWN', `GitHub request failed (HTTP ${status})`, status, null, docUrl);
   }
 
   if (error instanceof Error) {
     if (/ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed/i.test(error.message)) {
-      return new GithubError('NETWORK_ERROR', `Network error reaching GitHub: ${error.message}`, null, 5);
+      return new GithubError('NETWORK_ERROR', 'Network error reaching GitHub', null, 5);
     }
-    return new GithubError('UNKNOWN', error.message, null);
+    return new GithubError('UNKNOWN', 'GitHub request failed', null);
   }
 
-  return new GithubError('UNKNOWN', String(error), null);
+  return new GithubError('UNKNOWN', 'GitHub request failed', null);
 }
 
 function extractDocumentationUrl(error: RequestError): string | null {
   const data = (error.response?.data ?? {}) as { documentation_url?: unknown };
-  return typeof data.documentation_url === 'string' ? data.documentation_url : null;
+  if (typeof data.documentation_url !== 'string') return null;
+  try {
+    const url = new URL(data.documentation_url);
+    return url.origin === 'https://docs.github.com' ? `${url.origin}${url.pathname}` : null;
+  } catch { return null; }
 }

@@ -103,7 +103,7 @@ export class OpenAiProvider implements LlmProvider {
 
     return retry(
       async () => {
-        const response = await fetch(`${baseUrl}/chat/completions`, {
+        const response = await safeProviderFetch(this.name, `${baseUrl}/chat/completions`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${this.config.apiKey}`,
@@ -125,7 +125,7 @@ export class OpenAiProvider implements LlmProvider {
           throw await toProviderError(response, this.name);
         }
 
-        const data = (await response.json()) as {
+        const data = (await response.json().catch(() => { throw new LlmProviderError('OPENAI response was not valid JSON', response.status, false, this.name); })) as {
           choices: Array<{ message: { content: string | null }; finish_reason: string }>;
           usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
           model: string;
@@ -184,7 +184,7 @@ export class AnthropicProvider implements LlmProvider {
 
     return retry(
       async () => {
-        const response = await fetch(`${baseUrl}/v1/messages`, {
+        const response = await safeProviderFetch(this.name, `${baseUrl}/v1/messages`, {
           method: 'POST',
           headers: {
             'x-api-key': this.config.apiKey,
@@ -213,7 +213,7 @@ export class AnthropicProvider implements LlmProvider {
           throw await toProviderError(response, this.name);
         }
 
-        const data = (await response.json()) as {
+        const data = (await response.json().catch(() => { throw new LlmProviderError('ANTHROPIC response was not valid JSON', response.status, false, this.name); })) as {
           content: Array<{ type: string; text?: string }>;
           usage?: { input_tokens: number; output_tokens: number };
           model: string;
@@ -356,9 +356,8 @@ async function toProviderError(response: Response, provider: string): Promise<Ll
 /**
  * Pull the provider's error code out of a JSON error body, if there is one.
  *
- * Constrained on purpose: only a short, identifier-shaped value from a known field is accepted.
- * A provider that returns prose in `code` gets nothing extracted rather than having prose
- * forwarded into a persisted error field.
+ * Only an explicitly allowlisted category is accepted. Identifier shape alone
+ * does not establish safety: a provider could echo a credential in that field.
  */
 function extractProviderErrorCode(body: string): string | null {
   if (!body) return null;
@@ -372,12 +371,26 @@ function extractProviderErrorCode(body: string): string | null {
     const candidate =
       firstString(parsed.error?.code) ?? firstString(parsed.error?.type) ?? firstString(parsed.type);
 
-    if (candidate && /^[a-z0-9_.-]{1,60}$/i.test(candidate)) return candidate;
+    if (candidate && SAFE_PROVIDER_CODES.has(candidate)) return candidate;
   } catch {
     // Not JSON, or an unexpected shape. Either way there is nothing safe to extract.
   }
 
   return null;
+}
+
+const SAFE_PROVIDER_CODES = new Set([
+  'invalid_api_key', 'invalid_request_error', 'context_length_exceeded', 'rate_limit_exceeded',
+  'insufficient_quota', 'model_not_found', 'authentication_error', 'permission_error',
+  'not_found_error', 'request_too_large', 'rate_limit_error', 'api_error', 'overloaded_error',
+]);
+
+async function safeProviderFetch(provider: string, url: string, options: RequestInit): Promise<Response> {
+  try { return await fetch(url, options); }
+  catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw new DOMException('Provider request aborted', 'AbortError');
+    throw new LlmProviderError(`${provider} transport failed`, null, false, provider);
+  }
 }
 
 function firstString(value: unknown): string | null {

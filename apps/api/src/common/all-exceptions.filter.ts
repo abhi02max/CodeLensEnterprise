@@ -10,7 +10,7 @@ import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { classifyDatabaseError } from '@codelens/database';
 import { GithubError } from '@codelens/github';
-import type { ApiErrorBody } from '@codelens/shared';
+import { diagnosticPath, sanitizeDiagnosticText, sensitiveDiagnosticKey, type ApiErrorBody } from '@codelens/shared';
 import { AppException } from './errors';
 import { TRACE_ID_HEADER } from './trace.constants';
 
@@ -42,15 +42,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const traceId = (request.headers[TRACE_ID_HEADER] as string | undefined) ?? 'unknown';
+    const secrets = requestDiagnosticSecrets(request);
+    const clean = (text: string) => sanitizeDiagnosticText(text, secrets);
+    const traceId = clean((request.headers[TRACE_ID_HEADER] as string | undefined) ?? 'unknown');
     const mapped = this.map(exception);
-    const path = redactSensitivePath(request.originalUrl);
+    const path = clean(redactSensitivePath(request.originalUrl));
 
     const body: ApiErrorBody = {
       statusCode: mapped.status,
-      code: mapped.code,
-      message: mapped.message,
-      ...(mapped.errors ? { errors: mapped.errors } : {}),
+      code: clean(mapped.code),
+      message: clean(mapped.message),
+      ...(mapped.errors ? { errors: Object.fromEntries(Object.entries(mapped.errors).map(([key, values]) => [clean(key), values.map(clean)])) } : {}),
       traceId,
       timestamp: new Date().toISOString(),
       path,
@@ -59,12 +61,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // 5xx is our fault and gets a stack trace; 4xx is the caller's and gets one line.
     if (mapped.status >= 500) {
       this.logger.error(
-        `trace=${traceId} ${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
-        exception instanceof Error ? exception.stack : undefined,
+        clean(`trace=${traceId} ${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`),
+        exception instanceof Error && exception.stack ? clean(exception.stack) : undefined,
       );
     } else {
       this.logger.warn(
-        `trace=${traceId} ${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`,
+        clean(`trace=${traceId} ${request.method} ${path} -> ${mapped.status} ${mapped.code}: ${mapped.logMessage}`),
       );
     }
 
@@ -222,27 +224,37 @@ export class AllExceptionsFilter implements ExceptionFilter {
  * on a dead share link records a live token at warn level, and anyone with log access could
  * replay it until the link expired — which is a wider audience than the database has.
  *
- * Declared as a list so adding the next credential-bearing route is one entry rather than
- * another ad-hoc replace.
+ * Shared sanitization also strips query/fragment values at this diagnostic boundary.
  */
-const SECRET_PATH_PREFIXES: readonly string[] = ['/review-sessions/share/'];
-
 export function redactSensitivePath(originalUrl: string): string {
-  for (const prefix of SECRET_PATH_PREFIXES) {
-    const start = originalUrl.indexOf(prefix);
-    if (start === -1) continue;
+  return diagnosticPath(originalUrl);
+}
 
-    const valueStart = start + prefix.length;
-    // Stop at the next path or query boundary so anything after the secret survives.
-    const boundary = originalUrl.slice(valueStart).search(/[/?#]/);
-    const valueEnd = boundary === -1 ? originalUrl.length : valueStart + boundary;
-
-    if (valueEnd === valueStart) continue;
-
-    return `${originalUrl.slice(0, valueStart)}[redacted]${originalUrl.slice(valueEnd)}`;
+function requestDiagnosticSecrets(request: Request): string[] {
+  const secrets: string[] = [];
+  const authorization = request.headers.authorization;
+  if (authorization) secrets.push(authorization, authorization.replace(/^\S+\s+/, ''));
+  for (const [key, value] of Object.entries(request.headers)) {
+    if (sensitiveDiagnosticKey(key)) for (const item of Array.isArray(value) ? value : [value]) if (item) secrets.push(item);
   }
+  for (const value of Object.values(request.cookies ?? {})) if (typeof value === 'string') secrets.push(value);
+  collectBodySecrets(request.body, secrets);
+  try {
+    const query = new URL(request.originalUrl, 'http://diagnostic.invalid').searchParams;
+    for (const [key, value] of query) if (sensitiveDiagnosticKey(key)) secrets.push(value);
+  } catch { /* Malformed URLs still get pathname-only diagnostics. */ }
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value && /(?:SECRET|TOKEN|API_KEY|ENCRYPTION_KEY|PASSWORD)$/.test(key)) secrets.push(value);
+  }
+  return secrets;
+}
 
-  return originalUrl;
+function collectBodySecrets(value: unknown, secrets: string[], depth = 0): void {
+  if (!value || typeof value !== 'object' || depth > 5) return;
+  for (const [key, item] of Object.entries(value)) {
+    if (sensitiveDiagnosticKey(key) && typeof item === 'string') secrets.push(item);
+    else collectBodySecrets(item, secrets, depth + 1);
+  }
 }
 
 function httpStatusCode(status: number): string {

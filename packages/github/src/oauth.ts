@@ -121,7 +121,7 @@ export async function exchangeCodeForToken(
       code,
       redirect_uri: config.callbackUrl,
     }),
-  });
+  }).catch(() => { throw new GithubError('NETWORK_ERROR', 'GitHub token exchange transport failed', null); });
 
   if (!response.ok) {
     throw new GithubError(
@@ -131,7 +131,7 @@ export async function exchangeCodeForToken(
     );
   }
 
-  const data = (await response.json()) as {
+  const data = (await response.json().catch(() => { throw new GithubError('UNKNOWN', 'GitHub token exchange returned invalid JSON', response.status); })) as {
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
@@ -145,7 +145,7 @@ export async function exchangeCodeForToken(
   if (data.error || !data.access_token) {
     throw new GithubError(
       'UNAUTHORIZED',
-      data.error_description ?? data.error ?? 'GitHub did not return an access token',
+      'GitHub token exchange was rejected. Start the connection again.',
       400,
     );
   }

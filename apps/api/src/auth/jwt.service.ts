@@ -85,7 +85,7 @@ export class JwtTokenService {
       const message = error instanceof Error ? error.message : String(error);
 
       if (!message.includes('expired')) {
-        this.logger.debug(`Access token rejected: ${message}`);
+        this.logger.debug('Access token rejected: invalid signature or format');
       }
 
       throw new UnauthorizedError(

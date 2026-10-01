@@ -78,12 +78,11 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
               // dimension configurations without re-indexing from scratch.
               ...(this.model.startsWith('text-embedding-3') ? { dimensions: this.dimensions } : {}),
             }),
-          });
+          }).catch(() => { throw new Error('OpenAI embedding transport failed'); });
 
           if (!response.ok) {
-            const body = await response.text();
             const error = new Error(
-              `Embedding request failed (${response.status}): ${body.slice(0, 300)}`,
+              `OpenAI embedding request failed (HTTP ${response.status}; ${response.status === 429 ? 'rate_limit' : response.status >= 500 ? 'upstream_failure' : 'request_rejected'})`,
             );
             // Mark rate limits and server errors as retryable.
             (error as Error & { retryable?: boolean }).retryable =
@@ -91,9 +90,16 @@ export class OpenAiEmbeddingProvider implements EmbeddingProvider {
             throw error;
           }
 
-          const data = (await response.json()) as {
+          const data = (await response.json().catch(() => { throw new Error('OpenAI embedding response was not valid JSON'); })) as {
             data: Array<{ embedding: number[]; index: number }>;
           };
+          if (!Array.isArray(data?.data) || data.data.length !== batch.length ||
+              new Set(data.data.map((item) => item?.index)).size !== batch.length ||
+              data.data.some((item) => !Number.isInteger(item?.index) || item.index < 0 || item.index >= batch.length ||
+                !Array.isArray(item.embedding) || item.embedding.length !== this.dimensions ||
+                item.embedding.some((value) => typeof value !== 'number' || !Number.isFinite(value)))) {
+            throw new Error('OpenAI embedding response violated the vector contract');
+          }
 
           // The API does not guarantee response order matches input order.
           return data.data
