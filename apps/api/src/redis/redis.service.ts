@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import type { EmbeddingCache } from '@codelens/rag-engine';
 import { AppConfigService } from '../config/app-config.service';
@@ -141,15 +142,23 @@ export class RedisService implements OnModuleInit, OnModuleDestroy, EmbeddingCac
    * lock and does not need to be: the idempotency key on ReviewRun is the real
    * correctness guarantee, and this only avoids obvious waste.
    */
-  async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+  async acquireLock(key: string, ttlSeconds: number): Promise<string | null> {
+    const token = randomUUID();
     return this.guard(async () => {
-      const result = await this.client.set(key, '1', 'EX', ttlSeconds, 'NX');
-      return result === 'OK';
-    }, true);
+      const result = await this.client.set(key, token, 'EX', ttlSeconds, 'NX');
+      return result === 'OK' ? token : null;
+    }, token);
   }
 
-  async releaseLock(key: string): Promise<void> {
-    await this.del(key);
+  async releaseLock(key: string, token: string): Promise<void> {
+    try {
+      await this.client.eval(
+        'if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end',
+        1, key, token,
+      );
+    } catch {
+      this.logger.warn('Could not release analysis lock; its TTL will expire');
+    }
   }
 
   // ---------------------------------------------------------------- EmbeddingCache

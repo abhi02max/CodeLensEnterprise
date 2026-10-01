@@ -1,6 +1,7 @@
 import { Logger, type OnApplicationBootstrap } from '@nestjs/common';
 import { OnWorkerEvent, WorkerHost } from '@nestjs/bullmq';
-import { UnrecoverableError, type Job } from 'bullmq';
+import type { Job } from 'bullmq';
+import { isRetryEligible } from '../retry-eligibility';
 import { AppConfigService } from '../../config/app-config.service';
 import type { BaseJobData, JobProgress, ManagedQueue } from '../queue.types';
 import { isWorkerProcess } from '../worker-mode';
@@ -102,9 +103,7 @@ export abstract class BaseQueueProcessor<TData extends BaseJobData>
   @OnWorkerEvent('failed')
   onFailed(job: Job<TData> | undefined, error: Error): void {
     const attempts = job?.opts.attempts ?? 1;
-    const willRetry = job
-      ? !(error instanceof UnrecoverableError) && job.attemptsMade < attempts
-      : false;
+    const willRetry = isRetryEligible(job, error);
 
     this.logger.error(
       `Failed ${job?.name ?? 'job'} ${job?.id ?? '?'} ` +

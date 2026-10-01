@@ -222,15 +222,17 @@ export class AnalysisService {
     }
 
     const lockKey = `analysis:lock:${pullRequest.id}:${pullRequest.headSha}`;
-    const acquired = await this.redis.acquireLock(lockKey, 900);
+    const lockToken = await this.redis.acquireLock(lockKey, 900);
 
-    if (!acquired) {
+    if (!lockToken) {
       throw new RateLimitedError(
         'An analysis of this pull request at this commit is already running.',
         60,
       );
     }
 
+    let reviewRunIdForCleanup: string | null = null;
+    try {
     // A forced re-run needs a distinct key, or it would collide with the run it replaces.
     const baseKeyTaken = await this.prisma.unscoped.reviewRun.findUnique({
       where: { idempotencyKey }, select: { id: true },
@@ -254,7 +256,12 @@ export class AnalysisService {
       },
       select: { id: true },
     });
+    reviewRunIdForCleanup = reviewRun.id;
 
+    const controller = new AbortController();
+    const startedAt = Date.now();
+
+    try {
     await this.audit.record({
       organizationId: params.organizationId,
       action: AuditAction.REVIEW_RUN_STARTED,
@@ -281,10 +288,6 @@ export class AnalysisService {
     params.onRunCreated?.(reviewRun.id);
 
     const aiSettings = await this.policy.getAiSettings(params.organizationId);
-    const controller = new AbortController();
-    const startedAt = Date.now();
-
-    try {
       const orchestrator = new ReviewOrchestrator(this.registry.registry, {
         persistToolRun: (record) =>
           this.persistToolRun(reviewRun.id, record),
@@ -401,10 +404,14 @@ export class AnalysisService {
       });
 
       throw error;
+    }
     } finally {
-      // Always release, so a crash does not block re-analysis for the full lock TTL.
-      await this.redis.releaseLock(lockKey);
-      this.scratchpad.release(reviewRun.id);
+      // Run creation and preparation can fail before the pipeline's own catch block.
+      try {
+        await this.redis.releaseLock(lockKey, lockToken);
+      } finally {
+        if (reviewRunIdForCleanup) this.scratchpad.release(reviewRunIdForCleanup);
+      }
     }
   }
 

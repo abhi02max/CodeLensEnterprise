@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { classifyJobError } from '../queue.service';
 import type { AnalyzePullRequestJobData, ManagedQueue } from '../queue.types';
 import { BaseQueueProcessor } from './base.processor';
+import { isRetryEligible } from '../retry-eligibility';
 
 /**
  * Runs the review pipeline off the queue.
@@ -45,11 +46,24 @@ export class ReviewRunProcessor extends BaseQueueProcessor<AnalyzePullRequestJob
     // Carried across every progress write. Each `updateProgress` replaces the whole payload,
     // so reporting the run id only once would make it appear and then vanish from the
     // client's view on the next stage change.
-    let reviewRunId: string | null = null;
+    const previousProgress = job.progress;
+    const previousRunId = previousProgress && typeof previousProgress === 'object' &&
+      'reviewRunId' in previousProgress && typeof previousProgress.reviewRunId === 'string'
+      ? previousProgress.reviewRunId : null;
+    let reviewRunId: string | null = previousRunId;
 
-    await this.report(job, { percent: 1, stage: 'PENDING', message: 'Starting analysis' });
+    await this.report(job, { percent: 1, stage: 'PENDING', message: 'Starting analysis',
+      ...(previousRunId ? { reviewRunId: previousRunId } : {}) });
 
     try {
+      if (previousRunId) {
+        await this.prisma.unscoped.reviewRun.updateMany({
+          where: { id: previousRunId, organizationId: data.organizationId,
+            status: ReviewRunStatus.RUNNING },
+          data: { status: ReviewRunStatus.FAILED, finishedAt: new Date(),
+            error: 'The prior worker stopped before this queued attempt began.' },
+        });
+      }
       const result = await this.analysis.run({
         organizationId: data.organizationId,
         pullRequestId: data.pullRequestId,
@@ -117,11 +131,11 @@ export class ReviewRunProcessor extends BaseQueueProcessor<AnalyzePullRequestJob
    * progress write rather than only once.
    */
   @OnWorkerEvent('failed')
-  async onJobExhausted(job: Job<AnalyzePullRequestJobData> | undefined): Promise<void> {
+  async onJobExhausted(job: Job<AnalyzePullRequestJobData> | undefined, error: Error): Promise<void> {
     if (!job) return;
 
     const attempts = job.opts.attempts ?? 1;
-    if (job.attemptsMade < attempts) return;
+    if (isRetryEligible(job, error)) return;
 
     const progress = job.progress;
     const reviewRunId =
@@ -140,8 +154,8 @@ export class ReviewRunProcessor extends BaseQueueProcessor<AnalyzePullRequestJob
           status: ReviewRunStatus.FAILED,
           finishedAt: new Date(),
           error:
-            `The analysis job stopped without completing after ${attempts} attempt(s). ` +
-            `The worker process most likely restarted mid-run. Re-run the analysis.`,
+            `The analysis job terminated without completing after ${job.attemptsMade} of ${attempts} allowed attempt(s). ` +
+            `Check the job failure diagnostics and re-run the analysis.`,
         },
       });
 
