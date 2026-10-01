@@ -33,6 +33,7 @@ import { zodBody } from '../common/zod-validation.pipe';
 import { AppConfigService } from '../config/app-config.service';
 import { AuthService } from './auth.service';
 import { JwtTokenService } from './jwt.service';
+import { OAuthStateService, OAUTH_BROWSER_COOKIE, OAUTH_TTL_SECONDS } from './oauth-state.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -41,6 +42,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly jwt: JwtTokenService,
     private readonly config: AppConfigService,
+    private readonly oauthState: OAuthStateService,
   ) {}
 
   /**
@@ -169,43 +171,30 @@ export class AuthController {
   /**
    * Begin the GitHub OAuth flow.
    *
-   * Public, because it is also the sign-in entry point. When called with a valid
-   * bearer token the flow instead links GitHub to that existing account, which is how
-   * "connect GitHub" works from settings.
+   * Public sign-in entry point. Explicit link mode requires a valid local refresh
+   * session; an optional bearer token must describe that same identity.
    */
   @Public()
   @Get('github')
   @ApiOperation({ summary: 'Redirect to GitHub to sign in or connect an account' })
   async github(
     @Req() request: Request & { user?: AuthenticatedUser },
-    @Query('redirectTo') redirectTo: string | undefined,
     @Query('mode') mode: string | undefined,
     @Res() response: Response,
   ): Promise<void> {
-    // The global guard skipped this route, so the token is parsed manually to decide
-    // between sign-in and link.
-    let linkToUserId: string | undefined;
-
-    if (mode === 'link') {
-      const header = request.headers.authorization;
-      const token = header?.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : null;
-
-      if (token) {
-        try {
-          const payload = await this.jwt.verifyAccess(token);
-          linkToUserId = payload.sub;
-        } catch {
-          // Fall through to plain sign-in rather than failing: the user may simply
-          // have an expired token, and signing them in is a reasonable outcome.
-        }
-      }
-    }
-
-    const { url } = this.auth.startGithubFlow({
-      ...(linkToUserId ? { linkToUserId } : {}),
-      ...(redirectTo ? { redirectTo } : {}),
+    const header = request.headers.authorization;
+    const accessToken = header?.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : undefined;
+    const { url, browser } = await this.auth.startGithubFlow({
+      link: mode === 'link',
+      refreshToken: request.cookies?.[REFRESH_TOKEN_COOKIE],
+      ...(accessToken ? { accessToken } : {}),
     });
-
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.cookie(OAUTH_BROWSER_COOKIE, browser, {
+      httpOnly: true, secure: this.config.isProduction, sameSite: 'lax',
+      path: '/api/v1/auth/github', maxAge: OAUTH_TTL_SECONDS * 1000,
+    });
     response.redirect(url);
   }
 
@@ -213,39 +202,35 @@ export class AuthController {
    * GitHub OAuth callback.
    *
    * Redirects to the web app rather than returning JSON, because the browser arrives
-   * here by top-level navigation. The access token is passed in the URL fragment: a
-   * fragment is never sent to the server and never appears in access logs or a
-   * `Referer` header, unlike a query parameter. The refresh token goes in an httpOnly
-   * cookie and never touches the URL at all.
+   * here by top-level navigation. Session recovery uses only the HttpOnly refresh
+   * cookie; neither access tokens nor upstream error details belong in redirect URLs.
    */
   @Public()
   @Get('github/callback')
   @ApiExcludeEndpoint()
   async githubCallback(
+    @Req() request: Request,
     @Query('code') code: string | undefined,
     @Query('state') state: string | undefined,
     @Query('error') error: string | undefined,
-    @Query('error_description') errorDescription: string | undefined,
     @RequestMeta() meta: { ipAddress: string | null; userAgent: string | null },
     @TraceId() traceId: string,
     @Res() response: Response,
   ): Promise<void> {
     const webUrl = this.config.webUrl;
-
-    // The user declined authorization, or GitHub rejected the request.
-    if (error) {
-      const reason = encodeURIComponent(errorDescription ?? error);
-      response.redirect(`${webUrl}/login?error=${reason}`);
-      return;
-    }
-
-    if (!code || !state) {
-      response.redirect(`${webUrl}/login?error=${encodeURIComponent('Incomplete OAuth callback')}`);
-      return;
-    }
-
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Referrer-Policy', 'no-referrer');
+    response.clearCookie(OAUTH_BROWSER_COOKIE, { path: '/api/v1/auth/github' });
+    let consumed = false;
     try {
-      const result = await this.auth.completeGithubFlow({ code, state }, { ...meta, traceId });
+      const context = await this.oauthState.consume(state, request.cookies?.[OAUTH_BROWSER_COOKIE], request.cookies?.[REFRESH_TOKEN_COOKIE]);
+      consumed = true;
+      if (error) {
+        response.redirect(`${webUrl}/auth/callback?oauth=denied`);
+        return;
+      }
+      if (!code) throw new UnauthorizedError('Incomplete GitHub callback');
+      const result = await this.auth.completeGithubFlow({ code, context }, { ...meta, traceId });
 
       response.cookie(
         REFRESH_TOKEN_COOKIE,
@@ -253,14 +238,9 @@ export class AuthController {
         this.jwt.refreshCookieOptions(),
       );
 
-      const target = safeRedirectTarget(result.redirectTo, webUrl);
-      response.redirect(
-        `${target}#access_token=${encodeURIComponent(result.tokens.accessToken)}` +
-          `&expires_in=${result.tokens.expiresIn}`,
-      );
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : 'GitHub sign-in failed';
-      response.redirect(`${webUrl}/login?error=${encodeURIComponent(message)}`);
+      response.redirect(`${webUrl}/auth/callback?oauth=connected`);
+    } catch {
+      response.redirect(`${webUrl}/auth/callback?oauth=${consumed ? 'failed' : 'invalid'}`);
     }
   }
 
@@ -291,26 +271,5 @@ export class AuthController {
 
     const { refreshToken: _omitted, ...tokens } = result.tokens;
     return { ...result, tokens };
-  }
-}
-
-/**
- * Constrain a post-login redirect to the configured web origin.
- *
- * Without this check the `redirectTo` parameter is an open redirect, and an open
- * redirect on an endpoint that appends an access token to the fragment hands that
- * token to any attacker-chosen host.
- */
-function safeRedirectTarget(redirectTo: string | null, webUrl: string): string {
-  if (!redirectTo) return `${webUrl}/auth/callback`;
-
-  try {
-    const candidate = new URL(redirectTo, webUrl);
-    const allowed = new URL(webUrl);
-
-    if (candidate.origin !== allowed.origin) return `${webUrl}/auth/callback`;
-    return candidate.toString();
-  } catch {
-    return `${webUrl}/auth/callback`;
   }
 }

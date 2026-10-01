@@ -23,15 +23,13 @@ const TOKEN_URL = 'https://github.com/login/oauth/access_token';
 /**
  * Signed, self-verifying `state` value.
  *
- * Rather than persisting state server-side, it carries a nonce plus an HMAC over
- * a timestamp. That makes the callback stateless while still proving the request
- * originated from us and has not expired — replaying an old authorize URL fails
- * the timestamp check.
+ * Signature/time validation only. The API must also bind the nonce to the initiating
+ * browser and atomically consume its server-side record before exchanging a code.
  */
 export function createOAuthState(secret: string, payload: Record<string, string> = {}): string {
   const nonce = randomBytes(16).toString('hex');
   const issuedAt = Date.now().toString();
-  const body = JSON.stringify({ nonce, issuedAt, ...payload });
+  const body = JSON.stringify({ ...payload, nonce, issuedAt, expiresAt: Number(issuedAt) + 600_000 });
   const encoded = Buffer.from(body, 'utf8').toString('base64url');
   const signature = createHmac('sha256', secret).update(encoded).digest('base64url');
   return `${encoded}.${signature}`;
@@ -71,8 +69,12 @@ export function verifyOAuthState(
     throw new GithubError('VALIDATION_FAILED', 'OAuth state payload is not valid JSON', 400);
   }
 
-  const issuedAt = Number(parsed.issuedAt);
-  if (!Number.isFinite(issuedAt) || Date.now() - issuedAt > maxAgeSeconds * 1000) {
+  const issuedAt = Number(parsed?.issuedAt);
+  const expiresAt = Number(parsed?.expiresAt);
+  if (!parsed || typeof parsed.nonce !== 'string' || !/^[a-f0-9]{32}$/.test(parsed.nonce) ||
+      !Number.isFinite(issuedAt) || issuedAt > Date.now() ||
+      !Number.isFinite(expiresAt) || expiresAt <= Date.now() ||
+      expiresAt - issuedAt > maxAgeSeconds * 1000 || Date.now() - issuedAt >= maxAgeSeconds * 1000) {
     throw new GithubError(
       'VALIDATION_FAILED',
       'OAuth state has expired. Start the sign-in flow again.',

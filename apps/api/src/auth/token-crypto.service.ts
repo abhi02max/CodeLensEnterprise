@@ -36,6 +36,7 @@ export class TokenCryptoService {
   private static readonly AUTH_TAG_BYTES = 16;
 
   constructor(config: AppConfigService) {
+    if (!/^[0-9a-fA-F]{64}$/.test(config.encryptionKey)) throw new Error('ENCRYPTION_KEY must be exactly 64 hexadecimal characters');
     // Env validation already enforces 64 hex characters, so this cannot throw in a
     // booted application. Re-checked here because a silently wrong key length would
     // surface as an unrelated crypto error at the first GitHub connection.

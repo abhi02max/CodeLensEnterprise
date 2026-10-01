@@ -16,10 +16,8 @@ import {
 import {
   assessScopes,
   buildAuthorizeUrl,
-  createOAuthState,
   exchangeCodeForToken,
   GithubClient,
-  verifyOAuthState,
 } from '@codelens/github';
 import {
   ConflictError,
@@ -33,6 +31,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit-logs/audit.service';
 import { JwtTokenService } from './jwt.service';
 import { TokenCryptoService } from './token-crypto.service';
+import { OAuthStateService, type OAuthContext } from './oauth-state.service';
 
 /**
  * Authentication and identity.
@@ -52,6 +51,7 @@ export class AuthService {
     private readonly crypto: TokenCryptoService,
     private readonly config: AppConfigService,
     private readonly audit: AuditService,
+    private readonly oauthState: OAuthStateService,
   ) {}
 
   // ---------------------------------------------------------------- local auth
@@ -258,12 +258,10 @@ export class AuthService {
   /**
    * Build the GitHub authorize URL.
    *
-   * The `state` parameter is an HMAC-signed payload rather than a database row, so the
-   * callback is stateless while still being CSRF-protected and time-limited. It also
-   * carries the id of an already-authenticated user, which is how "connect GitHub to
-   * my existing account" is distinguished from "sign in with GitHub".
+   * Signed nonce plus a browser/session-bound, single-use Redis record. Identity is
+   * server-side, not supplied by unsigned callback data.
    */
-  startGithubFlow(params: { linkToUserId?: string; redirectTo?: string }): { url: string } {
+  async startGithubFlow(params: { link?: boolean; refreshToken?: string; accessToken?: string }): Promise<{ url: string; browser: string }> {
     const github = this.config.github;
 
     if (!github.configured) {
@@ -273,12 +271,26 @@ export class AuthService {
       );
     }
 
-    const state = createOAuthState(this.config.jwtSecret, {
-      ...(params.linkToUserId ? { linkToUserId: params.linkToUserId } : {}),
-      ...(params.redirectTo ? { redirectTo: params.redirectTo } : {}),
-    });
+    let context: OAuthContext = { linkToUserId: null, organizationId: null, tokenGeneration: null };
+    if (params.link) {
+      if (!params.refreshToken) throw new UnauthorizedError('Sign in before connecting GitHub');
+      const refresh = await this.jwt.verifyRefresh(params.refreshToken);
+      await this.verifyGithubLocalIdentity(refresh.sub, refresh.gen);
+      const membership = await this.resolveDefaultMembership(refresh.sub);
+      context = { linkToUserId: refresh.sub, organizationId: membership?.organizationId ?? null, tokenGeneration: refresh.gen };
+      if (params.accessToken) {
+        const access = await this.jwt.verifyAccess(params.accessToken);
+        if (access.sub !== refresh.sub || access.gen !== refresh.gen) throw new UnauthorizedError('GitHub connection session mismatch');
+        if (access.orgId && !await this.prisma.unscoped.membership.findUnique({
+          where: { userId_organizationId: { userId: access.sub, organizationId: access.orgId } }, select: { organizationId: true },
+        })) throw new UnauthorizedError('GitHub connection organization mismatch');
+        context.organizationId = access.orgId;
+      }
+    }
+    const { state, browser } = await this.oauthState.issue(context, params.refreshToken);
 
     return {
+      browser,
       url: buildAuthorizeUrl(
         {
           clientId: github.clientId,
@@ -300,20 +312,17 @@ export class AuthService {
    * are renameable and reusable, ids are not.
    */
   async completeGithubFlow(
-    params: { code: string; state: string },
+    params: { code: string; context: OAuthContext },
     meta: { ipAddress: string | null; userAgent: string | null; traceId: string },
-  ): Promise<AuthResponse & { redirectTo: string | null }> {
+  ): Promise<AuthResponse> {
     const github = this.config.github;
 
     if (!github.configured) {
       throw new ValidationError('GitHub sign-in is not configured on this deployment');
     }
 
-    const verifiedState = verifyOAuthState(params.state, this.config.jwtSecret);
-    const linkToUserId =
-      typeof verifiedState.linkToUserId === 'string' ? verifiedState.linkToUserId : null;
-    const redirectTo =
-      typeof verifiedState.redirectTo === 'string' ? verifiedState.redirectTo : null;
+    const { linkToUserId } = params.context;
+    if (linkToUserId) await this.verifyGithubLocalIdentity(linkToUserId, params.context.tokenGeneration!);
 
     const tokenResponse = await exchangeCodeForToken(
       {
@@ -395,10 +404,7 @@ export class AuthService {
       });
 
       if (existingByEmail) {
-        // Same person, previously registered with a password. Link rather than
-        // creating a duplicate account for the same human.
-        userId = existingByEmail.id;
-        await this.upsertAccount(userId, accountData);
+        throw new ConflictError('Sign in to your existing CodeLens account before connecting GitHub');
       } else {
         const created = await this.prisma.unscoped.$transaction(async (tx) => {
           const user = await tx.user.create({
@@ -443,8 +449,13 @@ export class AuthService {
       });
     }
 
-    const auth = await this.buildAuthResponse(userId, membership?.organizationId ?? null);
-    return { ...auth, redirectTo };
+    const auth = await this.buildAuthResponse(userId, params.context.organizationId ?? membership?.organizationId ?? null);
+    return auth;
+  }
+
+  private async verifyGithubLocalIdentity(userId: string, generation: number): Promise<void> {
+    const user = await this.prisma.unscoped.user.findUnique({ where: { id: userId }, select: { tokenGeneration: true } });
+    if (!user || user.tokenGeneration !== generation) throw new UnauthorizedError('GitHub connection session was revoked');
   }
 
   async disconnectGithub(userId: string, organizationId: string | null): Promise<void> {

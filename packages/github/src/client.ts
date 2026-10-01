@@ -126,19 +126,16 @@ export class GithubClient {
       this.octokit.users.getAuthenticated(),
     );
 
-    let email = data.email;
+    let email: string | null = null;
 
-    // A user with a private primary email returns null above; the dedicated
-    // endpoint still exposes it when `user:email` was granted.
-    if (!email) {
-      try {
+    // Identity creation requires verified ownership, not merely a public profile field.
+    try {
         const { data: emails } = await this.request('listEmails', () =>
           this.octokit.users.listEmailsForAuthenticatedUser(),
         );
-        email = emails.find((e) => e.primary && e.verified)?.email ?? emails[0]?.email ?? null;
-      } catch {
-        email = null;
-      }
+        email = emails.find((e) => e.primary && e.verified)?.email ?? emails.find((e) => e.verified)?.email ?? null;
+    } catch {
+      email = null;
     }
 
     return {

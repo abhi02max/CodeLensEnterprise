@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { GithubClientFactory } from './github-client.factory';
 import { JwtTokenService } from './jwt.service';
 import { TokenCryptoService } from './token-crypto.service';
+import { OAuthStateService } from './oauth-state.service';
 
 /**
  * Global so the guards, TokenCryptoService and GithubClientFactory are available
@@ -16,7 +17,7 @@ import { TokenCryptoService } from './token-crypto.service';
 @Module({
   imports: [JwtModule.register({})],
   controllers: [AuthController],
-  providers: [AuthService, JwtTokenService, TokenCryptoService, GithubClientFactory],
+  providers: [AuthService, JwtTokenService, TokenCryptoService, GithubClientFactory, OAuthStateService],
   exports: [AuthService, JwtTokenService, TokenCryptoService, GithubClientFactory],
 })
 export class AuthModule {}

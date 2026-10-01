@@ -8,10 +8,11 @@ import { AppConfigService } from '../config/app-config.service';
  * Redis client, cache helpers and the embedding cache implementation.
  *
  * Every cache operation is failure-tolerant by design. Redis is a performance and
- * cost optimization here, never a correctness dependency: if it is down, diffs are
+ * cost optimization for cache helpers: if it is down, diffs are
  * refetched from GitHub and embeddings are recomputed. The product gets slower and
  * more expensive, but it keeps working. A cache that can take the service down is
- * worse than no cache.
+ * worse than no cache. OAuth nonce storage uses the client directly and fails closed;
+ * it is a security dependency, not a best-effort cache.
  *
  * Also implements {@link EmbeddingCache} so `packages/rag-engine` can reuse the same
  * connection. Embedding caching keyed on content hash is the single largest cost
