@@ -106,6 +106,7 @@ services:
   # --------------------------------------------------------------- api
   api:
     build: *api-build
+    stop_grace_period: ${SHUTDOWN_GRACE_PERIOD:-200s}
     container_name: codelens-api
     restart: unless-stopped
     env_file: [.env]
@@ -128,6 +129,7 @@ services:
 
   worker:
     build: *api-build
+    stop_grace_period: ${SHUTDOWN_GRACE_PERIOD:-200s}
     restart: unless-stopped
     env_file: [.env]
     environment:

@@ -127,6 +127,7 @@ export const EnvSchema = z.object({
   QUEUE_PREFIX: z.string().default('codelens'),
   QUEUE_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
   QUEUE_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  SHUTDOWN_DRAIN_MS: z.coerce.number().int().min(1000).max(600_000).default(180_000),
   /** When false this process serves HTTP only and runs no workers. */
   RUN_WORKERS_IN_API: booleanish(true),
 

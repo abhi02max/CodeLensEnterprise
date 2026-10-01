@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { AppConfigService } from './config/app-config.service';
+import { captureBootstrapSignals } from './queues/application-shutdown';
 
 const LOG_LEVELS: Record<string, LogLevel[]> = {
   trace: ['verbose', 'debug', 'log', 'warn', 'error'],
@@ -19,6 +20,7 @@ const LOG_LEVELS: Record<string, LogLevel[]> = {
 };
 
 async function bootstrap(): Promise<void> {
+  const bootstrapSignals = captureBootstrapSignals();
   const app = await NestFactory.create(AppModule, {
     // Buffered so configuration validation errors are emitted through the real
     // logger once it is configured, rather than as raw console output.
@@ -59,9 +61,7 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix(API_BASE_PATH.replace(/^\//, ''));
   app.useGlobalFilters(new AllExceptionsFilter(config.isProduction));
 
-  // Flush in-flight work on SIGTERM instead of dropping it: an analysis job mid-run
-  // should be allowed to finish or be requeued rather than vanish.
-  app.enableShutdownHooks();
+  if (bootstrapSignals.ready(app)) return;
 
   // ---- OpenAPI
   if (!config.isProduction) {

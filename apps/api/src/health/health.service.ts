@@ -37,6 +37,16 @@ export interface OverallHealth {
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
   private readonly startedAt = Date.now();
+  private draining = false;
+
+  markDraining(): void { this.draining = true; }
+
+  private drainingHealth(): OverallHealth {
+    return { status: 'down', version: process.env.npm_package_version ?? '0.1.0',
+      uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
+      checks: [{ name: 'shutdown', ok: false, latencyMs: 0, required: true, detail: 'Draining' }],
+    };
+  }
 
   /**
    * How long a job may sit unclaimed before the queues are reported unhealthy.
@@ -273,12 +283,14 @@ export class HealthService {
   }
 
   async overall(): Promise<OverallHealth> {
+    if (this.draining) return this.drainingHealth();
     const [database, redis, ml, queues] = await Promise.all([
       this.database(),
       this.redisHealth(),
       this.mlHealth(),
       this.probe('queues', false, () => this.queueHealth()),
     ]);
+    if (this.draining) return this.drainingHealth();
 
     const checks: DependencyHealth[] = [database, redis, ml, queues, this.aiHealth()];
 

@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { AppConfigService } from './config/app-config.service';
 import { QueueService } from './queues/queue.service';
 import { runAsWorkerProcess } from './queues/worker-mode';
+import { captureBootstrapSignals } from './queues/application-shutdown';
 
 const LOG_LEVELS: Record<string, LogLevel[]> = {
   trace: ['verbose', 'debug', 'log', 'warn', 'error'],
@@ -28,6 +29,7 @@ const LOG_LEVELS: Record<string, LogLevel[]> = {
  * analysis cannot compete with request handling for the event loop.
  */
 async function bootstrap(): Promise<void> {
+  const bootstrapSignals = captureBootstrapSignals();
   // Declared before the context is created, and deliberately not via process.env: the
   // configuration was already validated and cached while app.module.ts was imported, so
   // mutating the environment here would have no effect. See queues/worker-mode.ts.
@@ -42,10 +44,7 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(LOG_LEVELS[config.logLevel] ?? LOG_LEVELS.info!);
 
-  // Drains in-flight jobs on SIGTERM rather than dropping them: BullMQ returns an
-  // interrupted job to the queue only after its lock expires, so a clean close is the
-  // difference between a redeploy costing seconds and costing the lock duration.
-  app.enableShutdownHooks();
+  if (bootstrapSignals.ready(app)) return;
 
   const stats = await app.get(QueueService).stats();
 

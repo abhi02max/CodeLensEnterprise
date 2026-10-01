@@ -183,12 +183,14 @@ export class AppConfigService {
     concurrency: number;
     maxAttempts: number;
     runWorkersInApi: boolean;
+    shutdownDrainMs: number;
   } {
     return {
       prefix: this.get('QUEUE_PREFIX'),
       concurrency: this.get('QUEUE_CONCURRENCY'),
       maxAttempts: this.get('QUEUE_MAX_ATTEMPTS'),
       runWorkersInApi: this.get('RUN_WORKERS_IN_API'),
+      shutdownDrainMs: this.get('SHUTDOWN_DRAIN_MS'),
     };
   }
 
