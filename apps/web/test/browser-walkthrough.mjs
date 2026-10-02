@@ -193,8 +193,11 @@ try {
   // The button label flips from "Loading…" to "Sign in" only once React has hydrated, so this is
   // both the hydration gate and the assertion that the gate works. Interacting earlier is what
   // triggered a native GET submission and put the password in the URL.
-  await page.waitForSelector('button:not([disabled]):has-text("Sign in")', { timeout: 20000 });
-  check('submit enables only after hydration', await page.getByRole('button', { name: 'Sign in' }).isEnabled());
+  const credentialSignIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  await credentialSignIn.waitFor({ state: 'visible', timeout: 20000 });
+  check('submit enables only after hydration', await credentialSignIn.isEnabled());
+  const githubSignIn = page.getByRole('button', { name: 'Sign in with GitHub', exact: true });
+  check('GitHub sign-in is independently selectable', (await githubSignIn.count()) === 1 && await githubSignIn.isEnabled());
   check('credential fields carry no name attribute', (await page.locator('#password[name]').count()) === 0);
 
   await auditLayout(page, 'signin');
@@ -203,7 +206,7 @@ try {
   // An error state is part of the screen, so it gets looked at too.
   await page.fill('#email', 'owner@acme.dev');
   await page.fill('#password', 'wrong-password');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await credentialSignIn.click();
   await page.waitForSelector('[role="alert"]', { timeout: 15000 });
   check('bad credentials show an inline error', await page.locator('[role="alert"]').isVisible());
   check('credentials never reach the URL', !page.url().includes('password'), diagnosticUrl(page.url()));
@@ -211,7 +214,7 @@ try {
 
   // ------------------------------------------------------------------ login
   await page.fill('#password', PASSWORD);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await credentialSignIn.click();
   await page.waitForURL('**/dashboard', { timeout: 30000 });
   await page.waitForLoadState('networkidle');
 

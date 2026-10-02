@@ -88,7 +88,7 @@ async function signIn(email = 'owner@acme.dev') {
   await page.goto(`${web}/signin`);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL('**/dashboard');
 }
 
@@ -97,9 +97,15 @@ try {
   console.log('Browser critical path: auth, dashboard, PR navigation');
   await page.goto(`${web}/dashboard`);
   await page.waitForURL('**/signin');
+  const credentialSignIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  const githubSignIn = page.getByRole('button', { name: 'Sign in with GitHub', exact: true });
+  await credentialSignIn.waitFor({ state: 'visible' });
+  assert.equal(await credentialSignIn.count(), 1);
+  assert.equal(await githubSignIn.count(), 1);
+  assert.equal(await githubSignIn.isEnabled(), true);
   await page.getByLabel('Email').fill('owner@acme.dev');
   await page.getByLabel('Password').fill('wrong-password');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await credentialSignIn.click();
   await page.getByText('Could not sign in').waitFor();
   assert.equal(new URL(page.url()).pathname, '/signin');
   await signIn();

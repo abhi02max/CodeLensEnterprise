@@ -1,8 +1,9 @@
 # Verification and Claim Audit
 
-Latest checkpoint: Phase 2G-C2, 2026-10-02, based on HEAD
-`368819a6329aa388748b50e767f5819f1497517b` plus the uncommitted C2 product diff.
-See the Phase 2G-C2 section below. No C2 commit is claimed. Earlier checkpoint
+Latest checkpoint: Phase 2G certification-fix verification, 2026-10-02, based on
+`5814bd8c51159c6d2ea88f20ed4d22a943ed1571` plus the uncommitted scoped fixes.
+See the certification section below. No new commit or release certification is
+claimed. Phase 2G-C2 evidence was committed in 5814bd8. Earlier checkpoint
 statements are historical; their external-credential/hosted-CI boundaries are
 superseded only by the specifically scoped evidence below.
 
@@ -34,16 +35,22 @@ both now have tests. Real test failures still fail the root command.
 CI uses Node 22, pnpm 11.13.0, a disposable pgvector PostgreSQL service, baseline
 migration deployment and RAG verification before deterministic tests/builds.
 Python 3.12 runs the feature-contract suite. No paid credentials are required.
-Hosted CI execution: **VERIFIED for SHA 368819a6329aa388748b50e767f5819f1497517b**
-from the retained human-provided successful hosted-run evidence. Hosted execution
-of the uncommitted C2 diff remains **UNVERIFIED**.
+Hosted CI execution: **VERIFIED for SHA 5814bd8c51159c6d2ea88f20ed4d22a943ed1571**.
+[Actions run 36969607790](https://github.com/abhi02max/CodeLensEnterprise/actions/runs/36969607790)
+completed successfully; both Node and migration and ML contracts passed.
+The earlier 368819a proof remains historical. Hosted execution of the current
+uncommitted certification-fix diff remains **UNVERIFIED**.
 Actions use major release tags, not immutable SHA pins. The small CI does not
 run Redis/worker integration, browsers, Docker image builds, model training or
 advisory dependency/security scans. Docker's ML image build retains its model
 load/quality check; removing the old CI jobs does not prove those excluded checks.
 
-There is no repository ESLint gate configured. Prettier's existing whole-tree
-format check reports 119 files requiring formatting. Python Ruff reports nine
+There is no repository ESLint gate configured. The historical Phase 2F Prettier
+count was 119. Exact tracked Git-content measurement at 5814bd8 found 146 failing
+files versus 142 in its parent; four newly added files introduced the increase.
+Windows checkout line endings inflate the raw whole-tree command's count, so
+canonical comparisons use LF Git content and the pinned formatter/configuration.
+Python Ruff reports nine
 pre-existing violations. Neither is represented as passing CI. Static analysis
 of PR content is a separate product capability, not repository lint coverage.
 
@@ -747,6 +754,66 @@ gate/context wording and stale summary-header observations remain disclosed in t
 local attempt inventory; C2 does not claim those UX paths were corrected. Prettier/
 Ruff debt, deadline-overrun/SIGKILL recovery, exactly-once guarantees and exhaustive
 accessibility/security testing remain outside the proven boundary.
+
+## Phase 2G Release Certification and Scoped Fixes
+
+The clean audit examined exact SHA
+`5814bd8c51159c6d2ea88f20ed4d22a943ed1571` in a separate detached checkout.
+Frozen installation, 138 workspace tests (including 61 API tests), 11 Python
+contracts, Prisma validation/generation, sequential typecheck, production builds,
+and exact-SHA hosted CI passed. API tests were also run separately; those are not
+61 additional distinct tests. Fresh empty-volume initialization applied 0_baseline
+without seeding, repeat initialization was managed/idempotent, and explicit seed
+and normal restart passed. PR #412 retained four files, +26/-5, 31 changed lines.
+One credential-free live run persisted four findings at 58/59/69, ML baseline risk
+91, and nine context rows; AI was truthfully skipped. Certification resources were
+removed without touching the original or C2 projects. No external provider calls
+were repeated. Prior real GitHub/Gemini evidence remains independently scoped.
+
+That revision was **NOT RELEASE CERTIFIED**: `pnpm test:browser` failed before
+login because substring matching for Sign in also selected Sign in with GitHub.
+The walkthrough had the same ambiguity, including its hydration selector. Manual
+credential login succeeded; no product authentication defect was established.
+
+The uncommitted correction uses exact accessible button names in both scripts.
+The credential button becomes visible under its Sign in name after hydration;
+the enabled-state assertion remains. GitHub sign-in is separately selected by its
+exact name and checked without invoking OAuth. No authentication implementation,
+assertion removal, or new test identifier is involved.
+
+Only four newly added TypeScript files were formatted: repo-index.processor.test.ts,
+rag.service.test.ts, gemini-embeddings.test.ts, and gemini-embeddings.ts. Each is
+exactly the pinned formatter's output from its committed content; syntax-tree
+comparison preserves semantics, ignoring redundant expression parentheses.
+Canonical tracked-content counts: parent **142**, 5814bd8 **146**, corrected tree
+**142**. No existing baseline formatting failure was removed. CRLF checkout counts
+are not used to claim a formatting regression or a clean repository. Ruff's nine
+historical findings remain disclosed; no Python source or tooling was changed.
+
+Fix-pass browser verification used a new disposable project
+`codelens_certfix_5814bd8_20261002`, ports 53400/54400, explicit demo initialization,
+and the runbook's live PR #412 analysis before `pnpm test:browser`. External keys
+were blank. The critical path passed with 108 API requests, zero JS/network errors
+and four navigation cancellations. The walkthrough passed **83 checks, zero
+failed**. Invalid login, valid credential login, hydration, separately selectable
+GitHub sign-in, refresh, logout and protected-route behavior were exercised.
+GitHub OAuth itself was not invoked or re-proven.
+
+The walkthrough also recorded two 401 resource console messages on sign-in and
+two advisory text-clipping detections on existing line-clamped activity summaries.
+These diagnostics were not suppressed or converted into passing assertions; the
+existing command's exit criteria were unchanged. No clipping/auth product change
+was made, and this is not an exhaustive visual/accessibility certification.
+Targeted tests passed 16/16; the workspace suite passed 138/138. Python contracts
+passed; Ruff still exited nonzero with its nine unchanged findings.
+Prisma validation/generation, package/API/web production builds, sequential
+workspace typechecks both before and after the build, and `git diff --check`
+passed for the corrected source. 0_baseline remained byte-for-byte unchanged.
+
+Hosted CI for these uncommitted corrections and exact-revision release
+re-certification remain **UNVERIFIED**. Local fix-pass evidence does not certify a
+future commit, semantic retrieval/review quality, universal recovery, exactly-once
+effects, exhaustive accessibility, or universal secret non-leakage.
 
 ## Completion Estimate
 

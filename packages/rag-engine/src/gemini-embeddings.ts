@@ -8,8 +8,13 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
 
   constructor(private readonly config: { apiKey: string; model: string; dimensions: number }) {
     if (!config.apiKey) throw new Error('Gemini embedding credentials are not configured');
-    if (config.model !== 'gemini-embedding-2') throw new Error('Unsupported Gemini embedding model');
-    if (!Number.isInteger(config.dimensions) || config.dimensions < 128 || config.dimensions > 3072) {
+    if (config.model !== 'gemini-embedding-2')
+      throw new Error('Unsupported Gemini embedding model');
+    if (
+      !Number.isInteger(config.dimensions) ||
+      config.dimensions < 128 ||
+      config.dimensions > 3072
+    ) {
       throw new Error('Invalid Gemini embedding dimensions');
     }
     this.model = config.model;
@@ -29,7 +34,9 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:embedContent`,
         {
-          method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30_000),
+          method: 'POST',
+          redirect: 'error',
+          signal: AbortSignal.timeout(30_000),
           headers: { 'x-goog-api-key': this.config.apiKey, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: `models/${this.model}`,
@@ -37,14 +44,21 @@ export class GeminiEmbeddingProvider implements EmbeddingProvider {
             embedContentConfig: { outputDimensionality: this.dimensions, autoTruncate: false },
           }),
         },
-      ).catch(() => { throw new Error('Gemini embedding transport failed'); });
-      if (!response.ok) throw new Error(`Gemini embedding request failed (HTTP ${response.status})`);
-      const data = await response.json().catch(() => { throw new Error('Gemini embedding response was not valid JSON'); }) as
-        { embedding?: { values?: unknown } } | null;
+      ).catch(() => {
+        throw new Error('Gemini embedding transport failed');
+      });
+      if (!response.ok)
+        throw new Error(`Gemini embedding request failed (HTTP ${response.status})`);
+      const data = (await response.json().catch(() => {
+        throw new Error('Gemini embedding response was not valid JSON');
+      })) as { embedding?: { values?: unknown } } | null;
       const values: unknown = data?.embedding?.values;
-      if (!Array.isArray(values) || values.length !== this.dimensions ||
-          values.some((value) => typeof value !== 'number' || !Number.isFinite(value)) ||
-          !values.some((value) => value !== 0)) {
+      if (
+        !Array.isArray(values) ||
+        values.length !== this.dimensions ||
+        values.some((value) => typeof value !== 'number' || !Number.isFinite(value)) ||
+        !values.some((value) => value !== 0)
+      ) {
         throw new Error('Gemini embedding response violated the vector contract');
       }
       vectors.push(values as number[]);
