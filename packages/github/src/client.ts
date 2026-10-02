@@ -404,6 +404,27 @@ export class GithubClient {
 
   // -------------------------------------------------------------- file content
 
+  /** Bounded UTF-8 text at a full commit SHA, with upstream Git blob identity. */
+  async getFileSnapshot(fullName: string, path: string, revision: string, signal?: AbortSignal): Promise<{
+    content: string; blobSha: string;
+  } | null> {
+    if (!/^[a-f0-9]{40}$/i.test(revision)) throw new Error('Exact commit SHA required');
+    const { owner, repo } = this.splitFullName(fullName);
+    const { data } = await this.request('getExactContent', () => {
+      if (signal?.aborted) throw new GithubError('VALIDATION_FAILED', 'Read cancelled', 400);
+      return this.octokit.repos.getContent({ owner, repo, path, ref: revision,
+        request: { signal, timeout: 15_000 } });
+    });
+    if (Array.isArray(data) || data.type !== 'file') return null;
+    if (data.size > 1024 * 1024 || !('content' in data) || data.encoding !== 'base64')
+      throw new Error('File exceeds supported text bounds');
+    const bytes = Buffer.from(data.content, 'base64');
+    const content = bytes.toString('utf8');
+    if (bytes.length > 1024 * 1024 || content.includes('\0') ||
+        !Buffer.from(content, 'utf8').equals(bytes)) throw new Error('Unsupported binary file');
+    return { content, blobSha: data.sha };
+  }
+
   /** Decoded file content at a ref. Returns null for missing files or directories. */
   async getFileContent(fullName: string, path: string, ref?: string): Promise<string | null> {
     const { owner, repo } = this.splitFullName(fullName);
@@ -433,12 +454,15 @@ export class GithubClient {
   async listTree(
     fullName: string,
     ref: string,
+    signal?: AbortSignal,
   ): Promise<{ files: Array<{ path: string; sizeBytes: number; sha: string }>; truncated: boolean }> {
     const { owner, repo } = this.splitFullName(fullName);
 
-    const { data } = await this.request('getTree', () =>
-      this.octokit.git.getTree({ owner, repo, tree_sha: ref, recursive: 'true' }),
-    );
+    const { data } = await this.request('getTree', () => {
+      if (signal?.aborted) throw new GithubError('VALIDATION_FAILED', 'Read cancelled', 400);
+      return this.octokit.git.getTree({ owner, repo, tree_sha: ref, recursive: 'true',
+        ...(signal ? { request: { signal, timeout: 15_000 } } : {}) });
+    });
 
     const files = data.tree
       .filter((entry) => entry.type === 'blob' && typeof entry.path === 'string')

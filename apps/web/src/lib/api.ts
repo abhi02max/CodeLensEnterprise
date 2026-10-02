@@ -6,6 +6,9 @@ import type {
   CreateConversationInput,
   CreateConversationMessageInput,
   CreateConversationMessageResponse,
+  InvestigationResult,
+  InvestigationTool,
+  EvidenceView,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -120,6 +123,22 @@ export const api = {
     apiRequest<ConversationList>(
       `/review-sessions/${encodeURIComponent(prId)}/conversations${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
     ),
+  investigate: (turnId: string, tool: InvestigationTool, requestId: string, input: unknown) =>
+    apiRequest<InvestigationResult>(
+      `/collaboration-turns/${encodeURIComponent(turnId)}/tools/${tool}`,
+      {
+        method: 'POST',
+        body: { requestId, input },
+      },
+    ),
+  investigations: (turnId: string) =>
+    apiRequest<{ items: InvestigationResult[]; nextAfterSequence: number | null }>(
+      `/collaboration-turns/${encodeURIComponent(turnId)}/evidence`,
+    ),
+  investigation: (id: string) =>
+    apiRequest<InvestigationResult>(`/collaboration-tools/${encodeURIComponent(id)}`),
+  evidence: (id: string) =>
+    apiRequest<EvidenceView>(`/evidence-references/${encodeURIComponent(id)}`),
   createConversation: (prId: string, input: CreateConversationInput) =>
     apiRequest<ConversationView>(`/review-sessions/${encodeURIComponent(prId)}/conversations`, {
       method: 'POST',

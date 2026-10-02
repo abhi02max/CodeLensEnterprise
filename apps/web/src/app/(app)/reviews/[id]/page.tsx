@@ -245,7 +245,7 @@ export default function ReviewWorkspacePage() {
           />
 
           {data.analyzed && <ContextPanel context={data.ragContext} />}
-          <ConversationPanel key={sessionId} sessionId={sessionId} />
+          <ConversationPanel key={sessionId} sessionId={sessionId} context={data} />
         </div>
 
         {/*

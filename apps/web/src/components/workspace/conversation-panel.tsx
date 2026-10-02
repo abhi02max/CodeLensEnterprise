@@ -8,8 +8,16 @@ import { Alert, Button, Input, Textarea } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { shortSha } from '@/lib/format';
+import { EvidenceViewer } from './evidence-viewer';
+import type { ReviewSession } from '@/lib/types';
 
-export function ConversationPanel({ sessionId }: { sessionId: string }) {
+export function ConversationPanel({
+  sessionId,
+  context,
+}: {
+  sessionId: string;
+  context?: ReviewSession;
+}) {
   const client = useQueryClient();
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [afterId, setAfterId] = React.useState<string | undefined>();
@@ -17,7 +25,32 @@ export function ConversationPanel({ sessionId }: { sessionId: string }) {
   const [title, setTitle] = React.useState('');
   const [content, setContent] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
-  const createRequest = React.useRef<{ title: string; requestId: string } | null>(null);
+  const [origin, setOrigin] = React.useState('PR');
+  const choices: Array<{ key: string; label: string; anchor: ConversationAnchor }> = [
+    { key: 'PR', label: 'Pull request', anchor: { kind: 'PR' } },
+    { key: 'ML', label: 'Risk discussion', anchor: { kind: 'PR' } },
+    ...(context?.findings ?? []).slice(0, 20).map((f) => ({
+      key: f.id,
+      label: `Static: ${f.ruleId}`,
+      anchor: { kind: 'STATIC_FINDING' as const, findingId: f.id },
+    })),
+    ...(context?.run ? (context.aiReview?.findings ?? []) : []).slice(0, 20).map((f, i) => ({
+      key: `AI-${i}`,
+      label: `AI: ${f.title}`,
+      anchor: { kind: 'AI_FINDING' as const, reviewRunId: context!.run!.id, findingIndex: i },
+    })),
+    ...(context?.comments ?? []).slice(0, 20).map((c) => ({
+      key: c.id,
+      label: `Thread: ${c.path ?? 'PR'}`,
+      anchor: { kind: 'COMMENT' as const, commentId: c.id },
+    })),
+  ];
+  const chosenAnchor = choices.find((c) => c.key === origin)?.anchor ?? { kind: 'PR' as const };
+  const createRequest = React.useRef<{
+    title: string;
+    anchorKey: string;
+    requestId: string;
+  } | null>(null);
   const messageRequest = React.useRef<{ id: string; content: string; requestId: string } | null>(
     null,
   );
@@ -35,11 +68,13 @@ export function ConversationPanel({ sessionId }: { sessionId: string }) {
   const create = useMutation({
     mutationFn: () => {
       const text = title.trim();
-      if (createRequest.current?.title !== text)
-        createRequest.current = { title: text, requestId: crypto.randomUUID() };
+      const anchorKey = JSON.stringify(chosenAnchor);
+      if (createRequest.current?.title !== text || createRequest.current.anchorKey !== anchorKey)
+        createRequest.current = { title: text, anchorKey, requestId: crypto.randomUUID() };
       return api.createConversation(sessionId, {
-        ...createRequest.current,
-        anchor: { kind: 'PR' },
+        title: text,
+        requestId: createRequest.current.requestId,
+        anchor: chosenAnchor,
       });
     },
     onMutate: () => setError(null),
@@ -89,6 +124,19 @@ export function ConversationPanel({ sessionId }: { sessionId: string }) {
           create.mutate();
         }}
       >
+        <select
+          aria-label="Conversation context"
+          value={origin}
+          disabled={busy}
+          className="max-w-full rounded border border-surface-border bg-white px-2 text-xs"
+          onChange={(event) => setOrigin(event.target.value)}
+        >
+          {choices.map((choice) => (
+            <option key={choice.key} value={choice.key}>
+              {choice.label}
+            </option>
+          ))}
+        </select>
         <Input
           aria-label="Conversation title"
           maxLength={160}
@@ -198,6 +246,13 @@ export function ConversationPanel({ sessionId }: { sessionId: string }) {
                     </li>
                   ))}
                 </ol>
+                {detail.data.messages.length > 0 && (
+                  <EvidenceViewer
+                    key={detail.data.messages[detail.data.messages.length - 1]!.turn.id}
+                    turn={detail.data.messages[detail.data.messages.length - 1]!.turn}
+                    conversation={detail.data.conversation}
+                  />
+                )}
                 <div className="flex gap-2">
                   {afterSequence > 0 && (
                     <Button

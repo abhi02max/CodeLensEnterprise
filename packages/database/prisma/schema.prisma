@@ -59,6 +59,7 @@ model User {
   conversations  Conversation[]
   collaborationTurns CollaborationTurn[]
   conversationMessages ConversationMessage[]
+  investigationCalls CollaborationToolCall[]
 
   @@index([lastActiveAt])
 }
@@ -319,9 +320,11 @@ model Repository {
   chunks       RagChunk[]
   teams        RepositoryTeam[]
   indexRuns    IndexRun[]
+  investigationCalls CollaborationToolCall[]
 
   // A GitHub repo can be connected by more than one organization.
   @@unique([organizationId, githubId])
+  @@unique([id, organizationId])
   @@index([organizationId, fullName])
   @@index([indexStatus])
 }
@@ -409,6 +412,7 @@ model PullRequest {
   comments   Comment[]
   shareLinks ShareLink[]
   conversations Conversation[]
+  investigationCalls CollaborationToolCall[]
 
   @@unique([repositoryId, number])
   @@unique([id, organizationId])
@@ -1025,8 +1029,10 @@ model CollaborationTurn {
   initiatedBy User @relation(fields: [initiatedById], references: [id], onDelete: Restrict)
   reviewRun ReviewRun? @relation(fields: [reviewRunId, organizationId, pullRequestId], references: [id, organizationId, pullRequestId], onDelete: NoAction)
   messages ConversationMessage[]
+  toolCalls CollaborationToolCall[]
 
   @@unique([id, conversationId, organizationId])
+  @@unique([id, organizationId, pullRequestId])
   @@unique([conversationId, sequence])
   @@unique([conversationId, initiatedById, requestId])
   @@index([organizationId, conversationId])
@@ -1049,6 +1055,70 @@ model ConversationMessage {
 
   @@unique([conversationId, sequence])
   @@index([organizationId, conversationId, sequence])
+}
+
+model CollaborationToolCall {
+  id String @id @default(cuid())
+  organizationId String
+  pullRequestId String
+  repositoryId String
+  turnId String
+  requestedById String
+  tool String @db.VarChar(64)
+  version String @default("1") @db.VarChar(16)
+  sequence Int
+  requestId String @db.VarChar(64)
+  inputHash String @db.VarChar(64)
+  fence String @db.VarChar(64)
+  status String @default("RUNNING") @db.VarChar(16)
+  coverage String @default("Pending investigation") @db.VarChar(500)
+  nextCursor Int?
+  failureCategory String? @db.VarChar(32)
+  diagnostic String? @db.VarChar(300)
+  traceId String @db.VarChar(128)
+  startedAt DateTime @default(now())
+  deadlineAt DateTime
+  completedAt DateTime?
+  durationMs Int @default(0)
+  turn CollaborationTurn @relation(fields: [turnId, organizationId, pullRequestId], references: [id, organizationId, pullRequestId], onDelete: Cascade)
+  pullRequest PullRequest @relation(fields: [pullRequestId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  repository Repository @relation(fields: [repositoryId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  requestedBy User @relation(fields: [requestedById], references: [id], onDelete: Restrict)
+  evidence EvidenceReference[]
+  @@unique([id, turnId, organizationId])
+  @@unique([turnId, sequence])
+  @@unique([turnId, requestedById, requestId])
+  @@index([organizationId, turnId, sequence])
+  @@index([status, deadlineAt])
+}
+
+model EvidenceReference {
+  id String @id @default(cuid())
+  organizationId String
+  turnId String
+  toolCallId String
+  ordinal Int
+  sourceType String @db.VarChar(40)
+  sourceId String? @db.VarChar(160)
+  provenance String @db.VarChar(24)
+  observedRevision String? @db.VarChar(64)
+  indexRevision String? @db.VarChar(64)
+  path String? @db.VarChar(500)
+  side String? @db.VarChar(8)
+  startLine Int?
+  endLine Int?
+  contentHash String @db.VarChar(64)
+  blobHash String? @db.VarChar(40)
+  payloadHash String @db.VarChar(64)
+  excerpt String @db.Text
+  truncated Boolean @default(false)
+  redacted Boolean @default(false)
+  method String @db.VarChar(80)
+  metadata Json @default("{}")
+  observedAt DateTime @default(now())
+  toolCall CollaborationToolCall @relation(fields: [toolCallId, turnId, organizationId], references: [id, turnId, organizationId], onDelete: Cascade)
+  @@unique([toolCallId, ordinal])
+  @@index([organizationId, turnId])
 }
 
 enum ReviewVerdict {
