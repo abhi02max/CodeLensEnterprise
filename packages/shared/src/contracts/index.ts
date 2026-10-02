@@ -7,5 +7,6 @@ export * from './ml';
 export * from './rag';
 export * from './ai-review';
 export * from './collaboration';
+export * from './conversation';
 export * from './audit';
 export * from './tool';

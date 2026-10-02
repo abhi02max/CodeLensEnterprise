@@ -132,6 +132,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@codelens/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tanstack/react-query':
         specifier: 5.64.2
         version: 5.64.2(react@19.0.0)

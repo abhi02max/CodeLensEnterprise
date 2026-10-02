@@ -5,6 +5,7 @@ import { AnalysisModule } from './analysis/analysis.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AuthModule } from './auth/auth.module';
 import { CommentsModule } from './comments/comments.module';
+import { CollaborationModule } from './collaboration/collaboration.module';
 import { ReviewSessionsModule } from './review-sessions/review-sessions.module';
 import { McpToolsModule } from './mcp-tools/mcp-tools.module';
 import { MlModule } from './ml/ml.module';
@@ -63,6 +64,7 @@ import { UsersModule } from './users/users.module';
     McpToolsModule,
     AnalysisModule,
     CommentsModule,
+    CollaborationModule,
     // After AnalysisModule: the workspace reads the latest run through AnalysisReportService.
     ReviewSessionsModule,
     // Registered unconditionally. The processors declare `autorun: false` and only start

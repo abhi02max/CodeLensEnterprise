@@ -42,6 +42,9 @@ export const TENANT_SCOPED_MODELS = [
   'ApiKey',
   'ReviewPolicy',
   'AiSettings',
+  'Conversation',
+  'CollaborationTurn',
+  'ConversationMessage',
 ] as const;
 
 const TENANT_MODEL_SET: ReadonlySet<string> = new Set(TENANT_SCOPED_MODELS);

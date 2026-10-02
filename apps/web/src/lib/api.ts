@@ -1,5 +1,13 @@
 import { apiRequest, setAccessToken } from './api-client';
 import type {
+  ConversationDetail,
+  ConversationList,
+  ConversationView,
+  CreateConversationInput,
+  CreateConversationMessageInput,
+  CreateConversationMessageResponse,
+} from '@codelens/shared';
+import type {
   AuditLogView,
   AuthResponse,
   CommentView,
@@ -108,6 +116,25 @@ export const api = {
 
   session_: (id: string) => apiRequest<ReviewSession>(`/review-sessions/${id}`),
 
+  conversations: (prId: string, afterId?: string) =>
+    apiRequest<ConversationList>(
+      `/review-sessions/${encodeURIComponent(prId)}/conversations${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
+    ),
+  createConversation: (prId: string, input: CreateConversationInput) =>
+    apiRequest<ConversationView>(`/review-sessions/${encodeURIComponent(prId)}/conversations`, {
+      method: 'POST',
+      body: input,
+    }),
+  conversation: (id: string, afterSequence = 0) =>
+    apiRequest<ConversationDetail>(
+      `/conversations/${encodeURIComponent(id)}?afterSequence=${afterSequence}`,
+    ),
+  createConversationMessage: (id: string, input: CreateConversationMessageInput) =>
+    apiRequest<CreateConversationMessageResponse>(
+      `/conversations/${encodeURIComponent(id)}/messages`,
+      { method: 'POST', body: input },
+    ),
+
   approve: (id: string, summary?: string) =>
     apiRequest<{ review: ReviewView; gate: ReviewGateStatus }>(`/review-sessions/${id}/approve`, {
       method: 'POST',
@@ -151,7 +178,12 @@ export const api = {
   // ---------------------------------------------------------------- share links
   createShareLink: (
     sessionId: string,
-    input: { scope: 'SUMMARY' | 'FULL'; expiresInHours: number; redactCode: boolean; passphrase?: string },
+    input: {
+      scope: 'SUMMARY' | 'FULL';
+      expiresInHours: number;
+      redactCode: boolean;
+      passphrase?: string;
+    },
   ) =>
     apiRequest<ShareLinkView & { token: string }>(`/review-sessions/${sessionId}/share-link`, {
       method: 'POST',

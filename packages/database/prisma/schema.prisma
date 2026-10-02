@@ -56,6 +56,9 @@ model User {
   shareLinks      ShareLink[]
   apiKeys         ApiKey[]
   authoredPrs     PullRequest[]    @relation("PrAuthor")
+  conversations  Conversation[]
+  collaborationTurns CollaborationTurn[]
+  conversationMessages ConversationMessage[]
 
   @@index([lastActiveAt])
 }
@@ -103,6 +106,7 @@ model Organization {
   aiSettings   AiSettings?
   auditLogs    AuditLog[]
   apiKeys      ApiKey[]
+  conversations Conversation[]
 
   @@index([slug])
 }
@@ -404,8 +408,10 @@ model PullRequest {
   reviews    Review[]
   comments   Comment[]
   shareLinks ShareLink[]
+  conversations Conversation[]
 
   @@unique([repositoryId, number])
+  @@unique([id, organizationId])
   @@index([organizationId, state, githubUpdatedAt(sort: Desc)])
   @@index([repositoryId, state, githubUpdatedAt(sort: Desc)])
   @@index([organizationId, latestRiskLevel])
@@ -556,8 +562,10 @@ model ReviewRun {
   mlPrediction    MlPrediction?
   aiReview        AiReview?
   retrievedChunks RetrievedContext[]
+  collaborationTurns CollaborationTurn[]
 
   @@unique([idempotencyKey])
+  @@unique([id, organizationId, pullRequestId])
   @@index([organizationId, createdAt(sort: Desc)])
   @@index([pullRequestId, createdAt(sort: Desc)])
   @@index([status, stage])
@@ -959,6 +967,89 @@ model IndexRun {
 // ===========================================================================
 // Collaboration
 // ===========================================================================
+
+enum ConversationStatus {
+  OPEN
+}
+
+enum CollaborationTurnStatus {
+  RECORDED
+}
+
+enum ConversationMessageKind {
+  HUMAN
+}
+
+model Conversation {
+  id             String @id @default(cuid())
+  organizationId String
+  pullRequestId  String
+  createdById    String
+  title          String @db.VarChar(160)
+  status         ConversationStatus @default(OPEN)
+  // Context only, never trusted evidence. Validated by shared contracts/service.
+  anchor         Json?
+  requestId      String @db.VarChar(64)
+  requestHash    String @db.VarChar(64)
+  lastSequence   Int @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pullRequest PullRequest @relation(fields: [pullRequestId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  turns CollaborationTurn[]
+  messages ConversationMessage[]
+
+  @@unique([id, organizationId, pullRequestId])
+  @@unique([id, organizationId])
+  @@unique([organizationId, pullRequestId, createdById, requestId], map: "Conversation_creation_request_key")
+  @@index([organizationId, pullRequestId, id])
+}
+
+model CollaborationTurn {
+  id             String @id @default(cuid())
+  organizationId String
+  conversationId String
+  pullRequestId  String
+  initiatedById  String
+  headSha        String @db.VarChar(64)
+  reviewRunId    String?
+  status         CollaborationTurnStatus @default(RECORDED)
+  sequence       Int
+  requestId      String @db.VarChar(64)
+  requestHash    String @db.VarChar(64)
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId, organizationId, pullRequestId], references: [id, organizationId, pullRequestId], onDelete: Cascade)
+  initiatedBy User @relation(fields: [initiatedById], references: [id], onDelete: Restrict)
+  reviewRun ReviewRun? @relation(fields: [reviewRunId, organizationId, pullRequestId], references: [id, organizationId, pullRequestId], onDelete: NoAction)
+  messages ConversationMessage[]
+
+  @@unique([id, conversationId, organizationId])
+  @@unique([conversationId, sequence])
+  @@unique([conversationId, initiatedById, requestId])
+  @@index([organizationId, conversationId])
+}
+
+model ConversationMessage {
+  id             String @id @default(cuid())
+  organizationId String
+  conversationId String
+  turnId         String
+  createdById    String
+  sequence       Int
+  kind           ConversationMessageKind @default(HUMAN)
+  content        String @db.Text
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  turn CollaborationTurn @relation(fields: [turnId, conversationId, organizationId], references: [id, conversationId, organizationId], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([conversationId, sequence])
+  @@index([organizationId, conversationId, sequence])
+}
 
 enum ReviewVerdict {
   APPROVED

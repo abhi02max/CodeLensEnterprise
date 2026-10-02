@@ -22,6 +22,7 @@ import { ActivityPanel } from '@/components/workspace/activity-panel';
 import { AiReviewPanel } from '@/components/workspace/ai-review-panel';
 import { CommentsPanel, type DraftAnchor } from '@/components/workspace/comments-panel';
 import { ContextPanel } from '@/components/workspace/context-panel';
+import { ConversationPanel } from '@/components/workspace/conversation-panel';
 import { FindingsPanel } from '@/components/workspace/findings-panel';
 import { GatePanel } from '@/components/workspace/gate-panel';
 import { RiskPanel } from '@/components/workspace/risk-panel';
@@ -244,6 +245,7 @@ export default function ReviewWorkspacePage() {
           />
 
           {data.analyzed && <ContextPanel context={data.ragContext} />}
+          <ConversationPanel key={sessionId} sessionId={sessionId} />
         </div>
 
         {/*

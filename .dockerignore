@@ -12,3 +12,4 @@ apps/api/test
 docs
 screenshots
 .codelens-tmp
+.compose.*.local.yml
