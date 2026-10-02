@@ -127,7 +127,8 @@ export class AppConfigService {
 
   // ---------------------------------------------------------------- rag
   get rag(): {
-    embeddingProvider: 'openai' | 'local';
+    embeddingProvider: 'openai' | 'local' | 'gemini';
+    geminiApiKey: string;
     embeddingModel: string;
     embeddingDimensions: number;
     topK: number;
@@ -138,6 +139,7 @@ export class AppConfigService {
   } {
     return {
       embeddingProvider: this.get('EMBEDDING_PROVIDER'),
+      geminiApiKey: this.get('GEMINI_API_KEY'),
       embeddingModel: this.get('EMBEDDING_MODEL'),
       embeddingDimensions: this.get('EMBEDDING_DIMENSIONS'),
       topK: this.get('RAG_TOP_K'),

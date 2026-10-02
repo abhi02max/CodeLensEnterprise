@@ -342,11 +342,15 @@ Set `EXPECT_AI_STATUS=SKIPPED` for the critical path when no provider is configu
 There is no configured repository TypeScript lint command. `format:check` remains
 available, but existing formatting debt prevents treating it as a passing CI gate.
 
-The AI path is verified against a local provider double that speaks the OpenAI wire format, so the
+The deterministic AI failure path is verified against a local provider double that speaks the OpenAI wire format, so the
 real adapter, retry logic, JSON extraction, Zod validation, repair loop, evidence filter and
 persistence all execute unchanged. That matters because the failure modes worth testing — a
 rejected key, a non-JSON response, schema-valid-but-wrong shape, fabricated evidence ids, a model
 recommending approval of a CRITICAL change — cannot be produced on demand from a real provider.
+
+Phase 2G-C2 also completed a real GitHub OAuth/read-only fixture import and a real
+Gemini review with native 1536-D embeddings. See [the scoped evidence](docs/verification.md#phase-2g-c2-real-external-integration-2026-10-02).
+This proves integration mechanics, not semantic review quality or actual billing.
 
 ### Bugs found by running it
 
@@ -385,9 +389,9 @@ Stated plainly, because a portfolio project that claims to be finished is not cr
 
 **Never verified**
 
-- **No real LLM inference has ever run.** No provider key is configured. The AI path is verified
-  structurally against a wire-format double; whether a real model writes a *good* review is a
-  human judgement that has not been made.
+- **Real-model quality is not validated.** A real Gemini review and suggested tests completed
+  on one public controlled fixture. That is runtime proof, not a benchmark or proof that
+  generated tests work. OpenAI remains credit-blocked; other providers are not externally proven.
 - **Per-organization model retraining** is implemented but has never run on real labels.
 - **Only Chrome** was exercised in browser QA. No other engine, and no screen-reader testing.
 - **No formal security review or penetration test.** Tenant isolation is enforced and asserted, not
@@ -401,7 +405,13 @@ Stated plainly, because a portfolio project that claims to be finished is not cr
 - `npm audit` needs npm on PATH and ESLint needs the target repo to have a config; both report
   `NOT_INSTALLED` / `SKIPPED` rather than pretending.
 - The demo runs against seeded diff fixtures. The GitHub client, OAuth, webhook verification and
-  diff parsing are real code, but the demo path does not hit github.com.
+  diff parsing are real code, but the demo path does not hit github.com. Separate C2 evidence
+  verifies real GitHub OAuth/read operations; writes and webhooks remain untested.
+- C2's zero static findings reflect narrow fallback coverage: Semgrep was unavailable,
+  ESLint lacked repository configuration, and generic SQL construction/tenant-filter removal
+  are outside the current pattern rules. Zero findings does not certify safe code.
+- Gemini uses Google's OpenAI-compatible review endpoint and a native embedding adapter.
+  Displayed costs are generic estimates, not provider billing or free-tier quota guarantees.
 
 **Deliberately not built**
 

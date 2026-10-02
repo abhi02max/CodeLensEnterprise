@@ -296,7 +296,7 @@ export class InMemoryEmbeddingCache implements EmbeddingCache {
  * anyway — doing it here makes the token accounting honest rather than silently
  * paying for content that was discarded.
  */
-function sanitizeForEmbedding(text: string): string {
+export function sanitizeForEmbedding(text: string): string {
   const cleaned = text.replace(/\0/g, '').trim();
   // 8191 tokens is the model limit; ~3.6 chars/token leaves a safety margin.
   const maxChars = 28_000;

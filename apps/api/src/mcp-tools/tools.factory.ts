@@ -1000,7 +1000,7 @@ export class ToolsFactory {
               policyReasons: generated.policyReasons,
               droppedFindingCount: generated.droppedFindings.length,
               usedMapReduce: generated.usedMapReduce,
-              provider: aiSettings.provider,
+              provider: provider.name,
               model: generated.model,
               promptVersion: PROMPT_VERSION,
               tokenUsage: {
@@ -1025,7 +1025,7 @@ export class ToolsFactory {
             droppedFindingCount: generated.droppedFindings.length,
             usedMapReduce: generated.usedMapReduce,
             requiredRepair: generated.requiredRepair,
-            provider: aiSettings.provider,
+            provider: provider.name,
             model: generated.model,
             promptVersion: PROMPT_VERSION,
             tokenUsage: {

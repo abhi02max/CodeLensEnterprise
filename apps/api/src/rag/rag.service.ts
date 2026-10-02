@@ -13,6 +13,7 @@ import {
 } from '@codelens/shared';
 import {
   CachedEmbeddingProvider,
+  GeminiEmbeddingProvider,
   HybridRetriever,
   LocalEmbeddingProvider,
   OpenAiEmbeddingProvider,
@@ -64,6 +65,12 @@ export class RagService {
       settings.embeddingProvider === 'local'
         ? new LocalEmbeddingProvider({
             serviceUrl: this.config.ml.url,
+            model: settings.embeddingModel,
+            dimensions: this.config.rag.embeddingDimensions,
+          })
+        : settings.embeddingProvider === 'gemini'
+        ? new GeminiEmbeddingProvider({
+            apiKey: this.config.rag.geminiApiKey,
             model: settings.embeddingModel,
             dimensions: this.config.rag.embeddingDimensions,
           })
@@ -189,6 +196,10 @@ export class RagService {
         },
       );
 
+      const persistedChunkCount = await this.prisma.unscoped.ragChunk.count({
+        where: { repositoryId: params.repositoryId, organizationId: params.organizationId },
+      });
+
       await this.prisma.unscoped.$transaction([
         this.prisma.unscoped.indexRun.update({
           where: { id: indexRun.id },
@@ -209,9 +220,10 @@ export class RagService {
           where: { id: params.repositoryId },
           data: {
             indexStatus: progress.status,
-            indexedAt: progress.status === IndexStatus.INDEXED ? new Date() : null,
-            indexedChunkCount: progress.chunksCreated,
-            indexedCommitSha: progress.status === IndexStatus.INDEXED ? headSha : null,
+            ...(progress.status === IndexStatus.INDEXED
+              ? { indexedAt: new Date(), indexedCommitSha: headSha }
+              : {}),
+            indexedChunkCount: persistedChunkCount,
             indexError: progress.error,
           },
         }),

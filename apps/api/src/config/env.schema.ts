@@ -91,6 +91,7 @@ export const EnvSchema = z.object({
   AI_MAX_COST_CENTS_PER_RUN: z.coerce.number().int().min(1).default(50),
 
   OPENAI_API_KEY: z.string().default(''),
+  GEMINI_API_KEY: z.string().default(''),
   OPENAI_BASE_URL: z.string().url().default('https://api.openai.com/v1'),
   ANTHROPIC_API_KEY: z.string().default(''),
   ANTHROPIC_BASE_URL: z.string().url().default('https://api.anthropic.com'),
@@ -98,7 +99,7 @@ export const EnvSchema = z.object({
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
 
   // ---------------------------------------------------------------- rag
-  EMBEDDING_PROVIDER: z.enum(['openai', 'local']).default('openai'),
+  EMBEDDING_PROVIDER: z.enum(['openai', 'local', 'gemini']).default('openai'),
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   EMBEDDING_DIMENSIONS: z.coerce.number().int().min(64).max(4096).default(1536),
   RAG_TOP_K: z.coerce.number().int().min(1).max(50).default(12),

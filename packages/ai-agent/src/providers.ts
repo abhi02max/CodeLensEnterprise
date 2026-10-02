@@ -88,9 +88,13 @@ export class LlmProviderError extends Error {
 // ---------------------------------------------------------------- openai
 
 export class OpenAiProvider implements LlmProvider {
-  readonly name = 'OPENAI';
+  readonly name: string;
 
-  constructor(private readonly config: ProviderConfig) {}
+  constructor(private readonly config: ProviderConfig) {
+    // OPENAI selects the wire protocol; Google's compatible endpoint is still Gemini.
+    this.name = config.baseUrl?.replace(/\/+$/, '') ===
+      'https://generativelanguage.googleapis.com/v1beta/openai' ? 'GEMINI' : 'OPENAI';
+  }
 
   async complete(params: {
     messages: LlmMessage[];
@@ -125,7 +129,7 @@ export class OpenAiProvider implements LlmProvider {
           throw await toProviderError(response, this.name);
         }
 
-        const data = (await response.json().catch(() => { throw new LlmProviderError('OPENAI response was not valid JSON', response.status, false, this.name); })) as {
+        const data = (await response.json().catch(() => { throw new LlmProviderError(`${this.name} response was not valid JSON`, response.status, false, this.name); })) as {
           choices: Array<{ message: { content: string | null }; finish_reason: string }>;
           usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
           model: string;

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Processor } from '@nestjs/bullmq';
-import { QUEUE_NAMES } from '@codelens/shared';
+import { IndexStatus, QUEUE_NAMES } from '@codelens/shared';
 import type { Job } from 'bullmq';
 import { AppConfigService } from '../../config/app-config.service';
 import { RagService } from '../../rag/rag.service';
@@ -42,6 +42,7 @@ export class RepoIndexProcessor extends BaseQueueProcessor<IndexRepositoryJobDat
     cacheHitRate: number;
   }> {
     const data = job.data;
+    let percent = 1;
 
     await this.report(job, { percent: 1, stage: 'DISCOVERING', message: 'Listing repository files' });
 
@@ -56,11 +57,12 @@ export class RepoIndexProcessor extends BaseQueueProcessor<IndexRepositoryJobDat
         onProgress: (partial) => {
           const discovered = partial.filesDiscovered ?? 0;
           const processed = (partial.filesProcessed ?? 0) + (partial.filesSkipped ?? 0);
+          percent = discovered > 0 ? Math.min(99, Math.round((processed / discovered) * 100)) : 5;
 
           void this.report(job, {
             // Clamped below 99 so the bar never reads complete while work remains; the
             // final 100 is written only after the index run is committed.
-            percent: discovered > 0 ? Math.min(99, Math.round((processed / discovered) * 100)) : 5,
+            percent,
             stage: 'INDEXING',
             message:
               `${processed}/${discovered} files, ${partial.chunksCreated ?? 0} chunks, ` +
@@ -68,6 +70,11 @@ export class RepoIndexProcessor extends BaseQueueProcessor<IndexRepositoryJobDat
           });
         },
       });
+
+      if (progress.status !== IndexStatus.INDEXED) {
+        await this.report(job, { percent, stage: 'FAILED', message: 'Repository indexing failed' });
+        throw new Error('Repository indexing failed; see the index run diagnostics');
+      }
 
       await this.report(job, { percent: 100, stage: 'DONE', message: 'Index complete' });
 

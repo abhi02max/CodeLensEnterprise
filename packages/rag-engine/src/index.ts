@@ -16,6 +16,7 @@ export {
 } from './embeddings';
 
 export { PgVectorStore, type StoredChunk } from './pgvector-store';
+export { GeminiEmbeddingProvider } from './gemini-embeddings';
 
 export {
   HybridRetriever,

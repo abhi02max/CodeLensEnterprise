@@ -128,7 +128,7 @@ export const AiSettingsSchema = z.object({
   allowExternalModelCalls: z.boolean(),
   /** Redact detected secrets before any provider call. Strongly recommended. */
   redactSecretsBeforeSend: z.boolean(),
-  embeddingProvider: z.enum(['openai', 'local']),
+  embeddingProvider: z.enum(['openai', 'local', 'gemini']),
   embeddingModel: z.string().min(1).max(120),
 });
 export type AiSettings = z.infer<typeof AiSettingsSchema>;

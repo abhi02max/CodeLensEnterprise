@@ -1,8 +1,10 @@
 # Verification and Claim Audit
 
-Latest checkpoint: Phase 2G-B, 2026-10-01, based on HEAD
-`b32a10b40cf9d0adcbdffca6140d818d98655c90` plus the uncommitted evidence/copy-failure diff.
-See the Phase 2G-B section below. No Phase 2G-B commit is claimed.
+Latest checkpoint: Phase 2G-C2, 2026-10-02, based on HEAD
+`368819a6329aa388748b50e767f5819f1497517b` plus the uncommitted C2 product diff.
+See the Phase 2G-C2 section below. No C2 commit is claimed. Earlier checkpoint
+statements are historical; their external-credential/hosted-CI boundaries are
+superseded only by the specifically scoped evidence below.
 
 Historical evidence checkpoint: Phase 2F, 2026-09-30, based on HEAD
 `c2546d3e24069b3f5e873a2ca97abbeafd3b2cb9` plus the uncommitted hardening diff.
@@ -26,13 +28,15 @@ Use `pnpm install --frozen-lockfile`, `pnpm db:validate`, `pnpm db:generate`, `p
 `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm test:browser`.
 Browser commands require explicit URLs/password and installed Chrome; see the
 [demo runbook](demo-runbook.md). Root tests include database lifecycle tests;
-shared/GitHub legitimately have zero test files and only those packages use
-`--passWithNoTests`. Real failures in other packages still fail the root command.
+shared/GitHub retain `--passWithNoTests` for legitimate empty-test handling;
+both now have tests. Real test failures still fail the root command.
 
 CI uses Node 22, pnpm 11.13.0, a disposable pgvector PostgreSQL service, baseline
 migration deployment and RAG verification before deterministic tests/builds.
 Python 3.12 runs the feature-contract suite. No paid credentials are required.
-Hosted CI execution: **UNVERIFIED**. No remote Actions execution is claimed before pushing the changes.
+Hosted CI execution: **VERIFIED for SHA 368819a6329aa388748b50e767f5819f1497517b**
+from the retained human-provided successful hosted-run evidence. Hosted execution
+of the uncommitted C2 diff remains **UNVERIFIED**.
 Actions use major release tags, not immutable SHA pins. The small CI does not
 run Redis/worker integration, browsers, Docker image builds, model training or
 advisory dependency/security scans. Docker's ML image build retains its model
@@ -327,16 +331,16 @@ claim paid integrations, exhaustive security coverage or production scale.
 | Static analysis | RUNTIME PROVEN | Four live demo findings; external binaries optional |
 | Deterministic line anchors | AUTOMATED-TEST PROVEN | 11 analyzer tests plus browser readback |
 | ML risk service | RUNTIME PROVEN | Python bootstrap prediction consumed by worker |
-| Repository indexing | RUNTIME PROVEN | Phase 2C real package path with deterministic embeddings; not live GitHub |
-| pgvector retrieval | RUNTIME PROVEN | Phase 2C vector queries; synthetic embedding boundary |
+| Repository indexing | RUNTIME PROVEN | C2 real GitHub main tree and three real Gemini embeddings; earlier deterministic proof retained |
+| pgvector retrieval | RUNTIME PROVEN | C2 real query embedding and persisted retrieval; semantic quality unvalidated |
 | Lexical retrieval | RUNTIME PROVEN | Database FTS retrieval and demo context |
 | Hybrid retrieval | REAL / PROVEN MECHANICS | Implemented, deterministic-test and database/runtime proven; semantic quality UNVALIDATED |
 | MMR selection | REAL / PROVEN MECHANICS | Implemented, deterministic-test and runtime selection proven; semantic quality UNVALIDATED |
 | RAG provenance | RUNTIME PROVEN | Phase 2C truthful source/score evidence |
 | AI orchestration | RUNTIME PROVEN | Provider double and no-provider pipeline |
 | Structured validation/repair | RUNTIME PROVEN | Phase 2C controlled provider errors/repair |
-| Real AI provider | IMPLEMENTED / NOT EXTERNALLY VERIFIED | Credential blocked |
-| GitHub repository integration | IMPLEMENTED / NOT EXTERNALLY VERIFIED | OAuth/client implemented; credential blocked |
+| Real AI provider | VERIFIED (GEMINI) | C2 completed structured review/test suggestions; OpenAI credit-blocked; other providers not externally verified |
+| GitHub repository integration | VERIFIED (READ PATH) | C2 real OAuth, repository connection/indexing, PR import/diff; writes/webhooks not proven |
 | Authoritative ReviewRun semantics | RUNTIME PROVEN | Phase 2D-E plus run-selection tests |
 | Comments/replies | RUNTIME PROVEN | API and browser collaboration flow |
 | Verdicts | RUNTIME PROVEN | Approval/request changes and author guard |
@@ -346,7 +350,7 @@ claim paid integrations, exhaustive security coverage or production scale.
 | Audit logs | RUNTIME PROVEN | Persisted activity and browser human descriptions |
 | Graceful degradation | RUNTIME PROVEN | No-provider state; outage readiness check |
 | Responsive browser workflow | RUNTIME PROVEN | Critical path and walkthrough; not full WCAG |
-| CI | IMPLEMENTED / NOT EXTERNALLY VERIFIED | Local checks pass; hosted run pending |
+| CI | VERIFIED FOR PRE-C2 SHA | Hosted evidence for 368819a; uncommitted C2 diff locally verified only |
 | Worker recovery | PARTIAL | Same-job transient retry and queued restart runtime-proven; forced-stop/lock-expiry recovery unverified |
 | Observability | PARTIAL | IDs correlate logs and persistence; no platform/metrics tracing |
 | Graceful active-job shutdown | PARTIAL | Active SIGTERM drain and waiting-job isolation runtime-proven; deadline overrun not runtime-proven |
@@ -627,11 +631,129 @@ refresh changes can invalidate an earlier flow and require retry. Real external
 GitHub/provider proof remains EXTERNAL-CREDENTIAL BLOCKED. This narrow project does
 not include ML or a worker and does not establish new analysis/retrieval evidence.
 
+## Phase 2G-C2: Real External Integration (2026-10-02)
+
+**Real GitHub: VERIFIED for the tested OAuth/read-only integration path.**
+**Real Gemini: VERIFIED for native embeddings and structured review generation.**
+Only isolated Compose project `codelens_c2_20261001` was used, with its own
+PostgreSQL/Redis volumes and loopback web/API ports 43400/44400. The original
+CodeLens project/data and immutable `0_baseline` were not changed. No demo seed,
+token minting or database authentication bypass supplied this evidence.
+
+### Source and Provider Evidence
+
+Public fixture: `abhi02max/codelens-integration-fixture`, open/unmerged PR #1,
+base `main`, head `7f1fb3502d435adfa901dc14569aa2893a0945bd`. Imported diff and
+persisted metrics agree: three files, +10/-2, twelve changed lines. Real GitHub
+OAuth completed with only `user:email`; the callback URL was cleaned. The connected
+account's token was encrypted at rest and authenticated decryption was verified
+in memory without printing it. Earlier C1 synthetic concurrency/safety proof is
+retained and is not relabelled as new real-GitHub concurrency evidence.
+
+Index run `cmupgnskt0001qp01b0b9zx68` completed through the real queued worker:
+three chunks, all three with non-null 1536-D `gemini-embedding-2` vectors.
+Chunk paths: README.md, src/orders.ts, tests/orders.test.ts. Indexing used main,
+not a copy of an existing database or the PR head. A real query embedding and
+retrieval succeeded. src/search.ts is PR-added, so its absence from main's index
+is expected, not a missed file. The public fixture alone was sent externally.
+
+The first OpenAI embedding attempt returned HTTP 429; the user confirmed zero
+credits. OpenAI remains **CREDIT-BLOCKED**, not externally proven successful.
+The first Gemini review using `gemini-2.5-flash` returned non-retryable HTTP 404;
+its PARTIAL run remains historical evidence. One separately approved read-only
+model catalog succeeded, but catalog presence did not prove generation access.
+After explicit approval, the saved model and isolated API/worker configuration
+were changed to `gemini-3.8-flash`; the existing embeddings were retained.
+
+Successful queued run `cmuqhref50001of01g2jtw1ev` completed at
+2026-10-02 04:57:59.394 UTC in 46.748 seconds, with all four evidence flags true.
+Ten tools succeeded; GitHub posting was skipped. AiReview persisted provider
+`GEMINI`, model `gemini-3.8-flash`, REQUEST_CHANGES, three findings, three file
+explanations and two suggested tests. Persisted review content passes the shared
+AiReview schema. Security anchors are src/search.ts:2 and src/orders.ts:4, both
+changed lines; the testing observation is tests/orders.test.ts:6, an existing weak
+assertion rather than a newly added line. All cited ToolRun IDs belong to this run
+and succeeded; that validates provenance, not the truth of every model claim.
+Suggested tests were persisted/displayed, **not executed**.
+
+Four RetrievedContext rows survived report persistence, all referencing the README
+chunk: vector-only overview and per-file vector/lexical/convention combinations.
+Repeated chunk IDs across different retrieval targets are not four unique chunks.
+This proves retrieval/persistence mechanics, not optimal ranking or code-context
+quality. ML persisted OK, risk 10, xgboost/bootstrap-v1, isBaseline=true. Report
+output risk 9.9 is rounded to 10 in persistence/readback; it is weak synthetic/
+bootstrap evidence, not a trained organization risk model. Report flags/counts,
+AiReview, PrMetrics, MlPrediction and context rows agree. The workspace displays
+the completed Gemini review, anchors, RAG, baseline caveat and report metrics.
+Started/completed and tool audit records read back in the workspace. The tool
+audit's nine-success count is a snapshot before the audit tool itself completes;
+the final pipeline has ten successes, not a missing tool record.
+
+### Static Analysis: Expected Coverage Gap
+
+The recorded input contains all three complete small fixture patches. Secret scan
+and pattern scan each processed three files successfully and reported zero findings.
+ESLint was SKIPPED (no repository config), Semgrep NOT_INSTALLED in the worker,
+and npm audit SKIPPED (no changed manifest). Host Docker availability does not make
+the Semgrep binary or a Docker fallback available inside the worker container.
+The fallback SQL rules match Prisma raw-query calls, not a generic concatenated
+SQL-returning function; no rule models removal of this array's tenant filter or
+the inadequacy of these assertions. Zero findings is therefore expected limited
+coverage, **not proof of secure code** and not an input/anchor regression. No static
+rules were invented or broadened for this fixture. C2 does not prove Semgrep or
+deterministic detection of the two intended security hazards; AI identified them.
+
+### External Writes and Credential Safety
+
+Retained Redis job data has `postToGithub=false`; the posting tool is SKIPPED with
+"Not requested for this run", and there are zero GitHub-comment-posted audit rows.
+Read-only public GitHub verification shows the same open/unmerged head, zero issue
+comments and zero inline review comments. The sole review is a prior Copilot bot
+COMMENTED review (ID 5377713105, 2026-10-01 09:53:12 UTC), not CodeLens. No CodeLens
+merge, branch update, comment or review was performed. GitHub writes remain untested.
+
+In-memory scans of captured isolated API/worker/web logs and all tracked/proposed
+source files found **zero supplied credential-value matches**, including the
+decrypted GitHub token and configured runtime keys/passwords. Raw logs, provider
+responses and credentials were not printed. This is scoped exact-value evidence,
+not universal secret non-leakage, historical/proxy-log safety or penetration testing.
+Local env/Compose files and `.codelens-tmp` remain ignored and Docker-excluded.
+
+### Local Regression and Remaining Boundaries
+
+Final local checks: 138 tests passed (API 61, RAG 29, AI 23, static 11, shared 1,
+GitHub 7, database lifecycle 6); Prisma validation/generation, package/API/web builds,
+workspace typecheck and diff whitespace checks passed. An initial typecheck raced
+Next build's generated types; the sequential post-build rerun passed. No source fix
+or mass formatting was applied for that generated-artifact race.
+
+Product changes are limited to native Gemini embedding support, truthful compatible
+review service identity, failed indexing queue outcomes, and persisted index metadata.
+No test double enters normal runtime. Gemini reviews still select the OPENAI protocol
+adapter with Google's exact compatible base URL; configure its OPENAI_API_KEY slot
+locally with the Gemini key and GEMINI_API_KEY for native embeddings. The endpoint
+identity fix does not infer Gemini from arbitrary/lookalike hosts. No Gemini provider
+enum or schema migration was added. Native embeddings currently support only
+gemini-embedding-2 and use explicit 1536 dimensions here; arbitrary model/dimension
+combinations are not proven. Changing embedding models on populated indexes needs a
+deliberate compatible re-index; mixed-model retrieval quality is not claimed.
+
+Costs shown in the UI use existing generic estimates for unrecognized models;
+they are **not actual Gemini billing/free-tier charges or quota guarantees**.
+Semantic review/retrieval quality, generated-test correctness, real-provider repair/
+retry failure injection, GitHub writes/webhooks/private-repository scopes, other AI
+providers, and hosted CI for the new diff remain unverified. Earlier partial-run
+gate/context wording and stale summary-header observations remain disclosed in the
+local attempt inventory; C2 does not claim those UX paths were corrected. Prettier/
+Ruff debt, deadline-overrun/SIGKILL recovery, exactly-once guarantees and exhaustive
+accessibility/security testing remain outside the proven boundary.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.
 Core product: roughly 95%; engineering/reliability: roughly 85%; external
-verification: blocked, not complete. Optional commercial features (SSO, IDE,
+verification: scoped GitHub/Gemini path proven, not universal integration quality.
+Optional commercial features (SSO, IDE,
 additional hosts/integrations) are outside this portfolio definition.
 
 100% means a stranger can follow documented setup/demo, pass canonical checks and
