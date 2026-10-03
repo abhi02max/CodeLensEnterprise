@@ -1,6 +1,8 @@
 packages:
   - 'apps/web'
   - 'apps/api'
+  - 'apps/patch-executor'
+  - 'apps/sandbox-broker'
   - 'packages/*'
 
 # pnpm 11 blocks dependency build scripts by default (strictDepBuilds) and

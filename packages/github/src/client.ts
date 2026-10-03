@@ -16,6 +16,7 @@ import {
 import { classifyGithubError, GithubError } from './errors';
 import { parseFileDiff, touchedLineNumbers, type RawGithubFile } from './diff-parser';
 import { verifyExactGitFile, type ExactGitFile } from './exact-git-file';
+import { materializeExactSnapshot, type ExactSnapshot } from './exact-git-snapshot';
 
 /**
  * GitHub REST client.
@@ -404,6 +405,17 @@ export class GithubClient {
   }
 
   // -------------------------------------------------------------- file content
+
+  async materializeExactSnapshot(fullName: string, revision: string, signal?: AbortSignal): Promise<ExactSnapshot> {
+    const { owner, repo } = this.splitFullName(fullName);
+    try {
+      return await materializeExactSnapshot({
+        commit: async (commit_sha, signal) => (await this.octokit.git.getCommit({ owner, repo, commit_sha, request: { signal, timeout: 15000 } })).data,
+        tree: async (tree_sha, signal) => (await this.octokit.git.getTree({ owner, repo, tree_sha, request: { signal, timeout: 15000 } })).data,
+        blob: async (file_sha, signal) => (await this.octokit.git.getBlob({ owner, repo, file_sha, request: { signal, timeout: 15000 } })).data,
+      }, fullName, revision, signal);
+    } catch (error) { throw classifyGithubError(error); }
+  }
 
   async verifyExactFile(fullName: string, path: string, revision: string, options: { readContent?: boolean; signal?: AbortSignal } = {}): Promise<ExactGitFile> {
     const { owner, repo } = this.splitFullName(fullName);

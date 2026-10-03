@@ -29,6 +29,9 @@ importers:
       '@codelens/github':
         specifier: workspace:*
         version: link:../../packages/github
+      '@codelens/patch-core':
+        specifier: workspace:*
+        version: link:../../packages/patch-core
       '@codelens/rag-engine':
         specifier: workspace:*
         version: link:../../packages/rag-engine
@@ -74,9 +77,6 @@ importers:
       cookie-parser:
         specifier: 1.4.7
         version: 1.4.7
-      diff:
-        specifier: 8.0.2
-        version: 8.0.2
       helmet:
         specifier: 8.0.0
         version: 8.0.0
@@ -126,6 +126,44 @@ importers:
       '@types/passport-jwt':
         specifier: 4.0.1
         version: 4.0.1
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.5)(terser@5.51.2)
+
+  apps/patch-executor:
+    dependencies:
+      '@codelens/patch-core':
+        specifier: workspace:*
+        version: link:../../packages/patch-core
+    devDependencies:
+      esbuild:
+        specifier: 0.23.1
+        version: 0.23.1
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.5)(terser@5.51.2)
+
+  apps/sandbox-broker:
+    dependencies:
+      '@codelens/github':
+        specifier: workspace:*
+        version: link:../../packages/github
+      '@codelens/patch-core':
+        specifier: workspace:*
+        version: link:../../packages/patch-core
+      zod:
+        specifier: 3.24.1
+        version: 3.24.1
+    devDependencies:
+      esbuild:
+        specifier: 0.23.1
+        version: 0.23.1
       typescript:
         specifier: 5.7.3
         version: 5.7.3
@@ -246,6 +284,28 @@ importers:
       '@octokit/rest':
         specifier: 21.0.2
         version: 21.0.2
+    devDependencies:
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.5)(terser@5.51.2)
+
+  packages/patch-core:
+    dependencies:
+      '@codelens/github':
+        specifier: workspace:*
+        version: link:../github
+      '@codelens/shared':
+        specifier: workspace:*
+        version: link:../shared
+      diff:
+        specifier: 8.0.2
+        version: 8.0.2
+      zod:
+        specifier: 3.24.1
+        version: 3.24.1
     devDependencies:
       typescript:
         specifier: 5.7.3

@@ -1,0 +1,21 @@
+{
+  "name": "@codelens/sandbox-broker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/main.ts --bundle --platform=node --target=node22 --outfile=dist/broker.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codelens/github": "workspace:*",
+    "@codelens/patch-core": "workspace:*",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "vitest": "2.1.8",
+    "esbuild": "0.23.1"
+  }
+}

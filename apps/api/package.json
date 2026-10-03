@@ -15,7 +15,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "diff": "8.0.2",
+    "@codelens/patch-core": "workspace:*",
     "@codelens/ai-agent": "workspace:*",
     "@codelens/database": "workspace:*",
     "@codelens/github": "workspace:*",

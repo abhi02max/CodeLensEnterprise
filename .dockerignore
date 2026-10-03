@@ -9,6 +9,8 @@
 **/.tsbuildinfo
 apps/web/test
 apps/api/test
+apps/patch-executor/test
+apps/sandbox-broker/test
 docs
 screenshots
 .codelens-tmp

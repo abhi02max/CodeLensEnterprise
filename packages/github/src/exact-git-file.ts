@@ -41,6 +41,21 @@ export interface ExactGitReader {
 function fail(message: string): never {
   throw new GithubError('VALIDATION_FAILED', message, 400);
 }
+export function validateExactGitPath(rawPath: string): void {
+  if (!RepositoryPathSchema.safeParse(rawPath).success) fail('Unsafe repository path');
+  const parts = rawPath.split('/');
+  if (
+    parts.length > EXACT_GIT_LIMITS.depth ||
+    parts.some(
+      (p) =>
+        Buffer.byteLength(p, 'utf8') > 255 ||
+        /^\.git$/i.test(p) ||
+        /[. ]$/.test(p) ||
+        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p),
+    )
+  )
+    fail('Unsupported repository path');
+}
 const sha = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
 function classify(entry: Entry): GitEntryKind {
@@ -59,18 +74,8 @@ export async function verifyExactGitFile(
   rawPath: string,
   options: { readContent?: boolean; signal?: AbortSignal } = {},
 ): Promise<ExactGitFile> {
-  if (!RepositoryPathSchema.safeParse(rawPath).success) fail('Unsafe repository path');
+  validateExactGitPath(rawPath);
   const parts = rawPath.split('/');
-  if (
-    parts.length > EXACT_GIT_LIMITS.depth ||
-    parts.some(
-      (p) =>
-        /^\.git$/i.test(p) ||
-        /[. ]$/.test(p) ||
-        /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p),
-    )
-  )
-    fail('Unsupported repository path');
   if (!/^[a-f0-9]{40}$/i.test(revision)) fail('Exact commit SHA required');
   revision = revision.toLowerCase();
   const signal = options.signal

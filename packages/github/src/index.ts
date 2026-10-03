@@ -5,7 +5,19 @@ export {
   type RateLimitInfo,
   type RawPullRequest,
 } from './client';
-export { EXACT_GIT_LIMITS, type ExactGitFile, type GitEntryKind } from './exact-git-file';
+export {
+  EXACT_GIT_LIMITS,
+  validateExactGitPath,
+  type ExactGitFile,
+  type GitEntryKind,
+} from './exact-git-file';
+export {
+  materializeExactSnapshot,
+  snapshotDigest,
+  SNAPSHOT_LIMITS,
+  type ExactSnapshot,
+  type ExactSnapshotFile,
+} from './exact-git-snapshot';
 
 export {
   addedLines,

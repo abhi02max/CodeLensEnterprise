@@ -1042,6 +1042,32 @@ policy. Phase 3C deterministic verification remains PASSED; real Gemini
 investigation/tool/evidence PARTIALLY VERIFIED; final grounded response/citations
 NOT VERIFIED; multi-turn real-provider collaboration NOT VERIFIED.
 
+## Phase 3E Foundation: Restricted Materialization
+
+Foundation deterministic implementation and isolated runtime verification: **PASSED**.
+See [exact design, file inventory, proof and limitations](phase3e-foundation.md).
+The exact read-only snapshot, canonical shared patch core, credential-free
+executor and authenticated fixed-policy broker are prerequisites only. Only the
+broker has Docker authority; normal API/worker configuration is unchanged.
+
+The isolated project `codelens_phase3e_foundation_20261003` proved canonical
+candidate hashes, actual executor policy, same-policy active denial probes,
+bounded deadline cleanup, replay rejection, and unchanged repository fingerprints.
+505 workspace tests, Prisma validate/generate, sequential typecheck, production
+builds, dedicated image builds and diff checks passed. All six migrations and the
+lock file remain byte-identical; no migration was added. Local secret/proof/
+Compose/runtime artifacts are ignored, not proposed commit content.
+
+**PatchApplication persistence/API/queue/frontend: NOT IMPLEMENTED.**
+**Applied-code validation / Phase 3F: NOT IMPLEMENTED.**
+No provider call or GitHub mutation occurred. No real-time cleanup guarantee,
+secure erasure, compromised-kernel resistance, universal secret non-leakage, or
+semantic proposal quality is claimed. Phase 3C real Gemini investigation/tool/
+evidence remains PARTIALLY VERIFIED; final response/citations and multi-turn remain
+NOT VERIFIED. Phase 3D real-provider PROPOSE_PATCH remains NOT VERIFIED.
+Existing formatting/Ruff debt, expected signin diagnostics, clipping observations,
+and walkthrough risk drift remain disclosed and untouched.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.

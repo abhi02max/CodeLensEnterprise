@@ -1,0 +1,19 @@
+{
+  "name": "@codelens/patch-executor",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/main.ts --bundle --platform=node --target=node22 --outfile=dist/executor.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codelens/patch-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "vitest": "2.1.8",
+    "esbuild": "0.23.1"
+  }
+}
