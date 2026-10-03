@@ -198,11 +198,15 @@ export class CollaborationService implements OnModuleInit {
     if (existing) return { message: existing, aiExecutionAvailable: false };
     const pr = await this.requirePr(this.prisma.unscoped, actor, conversation.pullRequestId);
     let headSha: string;
+    let baseSha: string | null;
     try {
       const client = await this.github.forUser(actor.userId);
       const current = await client.getPullRequest(pr.repository.fullName, pr.number);
       headSha = current.headSha;
       if (!/^[a-f0-9]{7,64}$/i.test(headSha)) throw new Error('Missing head');
+      if (current.baseSha != null && !/^[a-f0-9]{40}$/i.test(current.baseSha))
+        throw new Error('Invalid base revision');
+      baseSha = current.baseSha?.toLowerCase() ?? null;
     } catch {
       throw new UpstreamUnavailableError(
         'GitHub',
@@ -235,6 +239,7 @@ export class CollaborationService implements OnModuleInit {
           pullRequestId: pr.id,
           initiatedById: actor.userId,
           headSha,
+          baseSha,
           reviewRunId: run?.id ?? null,
           sequence,
           requestId: input.requestId,
@@ -400,6 +405,7 @@ function messageView(row: MessageRow): ConversationMessageView {
       id: row.turn.id,
       conversationId: row.turn.conversationId,
       headSha: row.turn.headSha,
+      baseSha: row.turn.baseSha ?? null,
       reviewRunId: row.turn.reviewRunId,
       status: row.turn.status,
       sequence: row.turn.sequence,

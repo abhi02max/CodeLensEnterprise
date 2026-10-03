@@ -896,6 +896,66 @@ debt, older clipping observations and other previously disclosed limits remain.
 Existing migrations are unchanged. No GitHub mutation or Phase 3D implementation
 occurred. Hosted CI and exact-revision certification of this diff remain unverified.
 
+## Phase 3D Prerequisite Foundation (Not Patch Proposals)
+
+On baseline `3cdc6e9c67f1b7db30b54b46281e3447a59d8a99`, the prerequisite-only
+adjustment adds nullable `CollaborationTurn.baseSha` through
+`20261003010000_exact_revision_foundation`. There is no default or backfill;
+historical nulls remain null. New turns capture head/base together from one
+server-derived PR response. Missing upstream base remains null; malformed supplied
+base fails closed. Message replay returns the original pins without rereading PR
+metadata. Client message contracts cannot supply authoritative SHAs. Ordinary 3B
+reads and the 3C protocol/budgets are unchanged; future proposal validation must
+reject absent required exact revision metadata, not invent it.
+
+`GithubClient.verifyExactFile(fullName, path, revision, options)` is a stronger
+read-only internal primitive, separate from existing contents/search APIs. It
+walks nonrecursive Git trees from a full commit SHA, retaining each selected
+component's type/mode/object SHA. It distinguishes REGULAR_FILE, DIRECTORY,
+SYMLINK, SUBMODULE and UNSUPPORTED, stops at non-directory intermediate entries,
+and never follows symlinks/gitlinks. Only `100644` regular UTF-8 blobs with verified
+Git blob identity are modification-eligible; executable `100755` blobs are
+classified as regular but ineligible. Metadata-only reads are also ineligible.
+Paths reuse the 3B validator plus stricter `.git`, device-name, trailing-dot/space,
+depth and case-ambiguity exclusions. Missing paths and truncated/inconsistent trees
+fail closed. Repository scope is bound by the authorized caller, not model input.
+
+Bounds: 16 path components (at most 16 nonrecursive tree reads, one commit and one
+blob read), 10,000 entries per tree response, 1 MiB decoded blob bytes and a
+15-second overall abort deadline. Requests propagate cancellation, use 15-second
+wire timeouts and do not add automatic retries. These are response-contract/local
+validation guarantees, not independent cryptographic verification of upstream
+commit/tree serialization or a hard streaming network-byte cap. Git blob bytes
+are independently hashed before eligibility. No real GitHub behavior beyond the
+deterministic tested response contracts is claimed.
+
+Runtime proof used only new project `codelens_phase3d_foundation_20261003`, volume
+`codelens_phase3d_foundation_20261003_postgres_data`, with no published host ports.
+Fresh normal db-init applied all five migrations; all 35 application tables were
+empty afterward. Repeated db-init detected managed state with no pending migration.
+A separate database in the same new container was initialized through 3C and
+explicitly demo-seeded, then upgraded: existing-column fingerprints for all 35
+tables matched, historical conversation/message/turn sentinels survived with null
+base, and invalid base was rejected by the database constraint. A focused runtime
+proof used the newly built turn service and generated Prisma client against real
+PostgreSQL with deterministic read-only PR metadata: paired pins persisted, replay
+preserved them after cached base changed, historical null readback and foreign-tenant
+denial passed. This is not a new deployed HTTP/worker/browser verification claim.
+
+Prisma validation/generation, package builds, sequential workspace typecheck and
+API/worker-entry/web production builds passed. Workspace regressions passed:
+**372 tests** (shared 1, AI 79, GitHub 57 including 44 verifier cases, database 16,
+static analysis 11, RAG 29, API 179 including 42 conversation cases). The existing
+23-case execution suite was rerun after strengthening its pin-preserving retry
+assertion and passed. Formatting comparison remained 143 before/after, with no new
+failures; `git diff --check` passed.
+All four older migrations remain byte-identical. Ignored local Compose/proof files
+are excluded from production images and proposed commits. No provider request,
+GitHub mutation, PatchProposal, PROPOSE_PATCH, proposal UI, patch execution or Phase
+3E behavior was introduced. Known walkthrough/formatting debt and accepted 3C
+real-provider limitations remain unchanged. Hosted CI for this uncommitted
+prerequisite diff is not claimed.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.

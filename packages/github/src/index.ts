@@ -5,6 +5,7 @@ export {
   type RateLimitInfo,
   type RawPullRequest,
 } from './client';
+export { EXACT_GIT_LIMITS, type ExactGitFile, type GitEntryKind } from './exact-git-file';
 
 export {
   addedLines,

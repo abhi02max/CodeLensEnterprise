@@ -89,6 +89,7 @@ export interface CollaborationTurnView {
   id: string;
   conversationId: string;
   headSha: string;
+  baseSha: string | null;
   reviewRunId: string | null;
   sequence: number;
   status: CollaborationExecutionState;

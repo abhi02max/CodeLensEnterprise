@@ -11,6 +11,7 @@ import { CollaborationService } from './collaboration.service';
 
 const actor = { organizationId: 'org-a', userId: 'user-a', traceId: 'trace-a' };
 const head = 'a'.repeat(40);
+const base = 'b'.repeat(40);
 const now = new Date('2026-10-02T00:00:00Z');
 function fixture() {
   const conversation = {
@@ -66,6 +67,7 @@ function fixture() {
           id: 'turn-a',
           conversationId: conversation.id,
           headSha: head,
+          baseSha: db.collaborationTurn.create.mock.calls.at(-1)?.[0].data.baseSha ?? null,
           reviewRunId: 'run-a',
           sequence: data.sequence,
           status: 'RECORDED',
@@ -85,7 +87,12 @@ function fixture() {
     $queryRaw: vi.fn(async () => []),
   };
   const transaction = vi.fn(async (fn) => fn(db));
-  const getPullRequest = vi.fn(async () => ({ headSha: head }));
+  const getPullRequest = vi.fn(
+    async (): Promise<{ headSha: string; baseSha?: string | null }> => ({
+      headSha: head,
+      baseSha: base,
+    }),
+  );
   const github = { forUser: vi.fn(async () => ({ getPullRequest })) };
   const service = new CollaborationService(
     { unscoped: db, $transaction: transaction } as never,
@@ -98,6 +105,63 @@ const creation = () =>
 const message = () => ({ requestId: randomUUID(), content: 'Where does this value originate?' });
 
 describe('conversation foundation', () => {
+  it('pins both revisions from the same authoritative response, not cached PR metadata', async () => {
+    const { service, db, getPullRequest } = fixture();
+    const result = await service.message(actor, 'conversation-a', message());
+    expect(result.message.turn).toMatchObject({ headSha: head, baseSha: base });
+    expect(db.collaborationTurn.create.mock.calls[0][0].data).toMatchObject({
+      headSha: head,
+      baseSha: base,
+    });
+    expect(getPullRequest).toHaveBeenCalledOnce();
+    expect(getPullRequest).toHaveBeenCalledWith('test/repo', 1);
+  });
+  it('keeps absent upstream base null without copying mutable PR metadata', async () => {
+    const { service, db, getPullRequest } = fixture();
+    getPullRequest.mockResolvedValue({ headSha: head });
+    expect(
+      (await service.message(actor, 'conversation-a', message())).message.turn.baseSha,
+    ).toBeNull();
+    expect(db.collaborationTurn.create.mock.calls[0][0].data.baseSha).toBeNull();
+  });
+  it('replay preserves original pins despite later upstream and cached changes', async () => {
+    const { service, db, getPullRequest, pr } = fixture();
+    const input = message();
+    await service.message(actor, 'conversation-a', input);
+    const row = await db.conversationMessage.create.mock.results[0]!.value;
+    row.turn.requestHash = db.collaborationTurn.create.mock.calls[0]![0].data.requestHash;
+    db.conversationMessage.findFirst.mockResolvedValue(row);
+    pr.headSha = 'c'.repeat(40);
+    getPullRequest.mockResolvedValue({ headSha: pr.headSha, baseSha: 'd'.repeat(40) });
+    expect((await service.message(actor, 'conversation-a', input)).message.turn).toMatchObject({
+      headSha: head,
+      baseSha: base,
+    });
+    expect(getPullRequest).toHaveBeenCalledOnce();
+    expect(db.collaborationTurn.create).toHaveBeenCalledOnce();
+  });
+  it('reads historical null-base messages without a network lookup or backfill', async () => {
+    const { service, db, getPullRequest } = fixture();
+    getPullRequest.mockResolvedValue({ headSha: head });
+    await service.message(actor, 'conversation-a', message());
+    const row = await db.conversationMessage.create.mock.results[0]!.value;
+    db.conversationMessage.findMany.mockResolvedValue([row]);
+    getPullRequest.mockClear();
+    expect(
+      (await service.get(actor, 'conversation-a', { afterSequence: 0, limit: 20 })).messages[0]!
+        .turn.baseSha,
+    ).toBeNull();
+    expect(getPullRequest).not.toHaveBeenCalled();
+    expect(db.collaborationTurn.create).toHaveBeenCalledOnce();
+  });
+  it('rejects malformed supplied base rather than silently using cached data', async () => {
+    const { service, db, getPullRequest } = fixture();
+    getPullRequest.mockResolvedValue({ headSha: head, baseSha: 'main' });
+    await expect(service.message(actor, 'conversation-a', message())).rejects.toMatchObject({
+      code: 'UPSTREAM_UNAVAILABLE',
+    });
+    expect(db.collaborationTurn.create).not.toHaveBeenCalled();
+  });
   it('refuses startup when the forward migration is missing', async () => {
     const { service } = fixture();
     await expect(service.onModuleInit()).rejects.toThrow('Conversation schema is not ready');
@@ -289,6 +353,8 @@ describe('closed, bounded conversation contracts', () => {
     { content: 'hello', kind: 'ASSISTANT' },
     { content: 'hello', createdById: 'foreign' },
     { content: 'hello', reviewRunId: 'foreign' },
+    { content: 'hello', headSha: head },
+    { content: 'hello', baseSha: base },
   ])('rejects invalid message input %j', (fields) => {
     expect(
       CreateConversationMessageSchema.safeParse({ requestId: randomUUID(), ...fields }).success,

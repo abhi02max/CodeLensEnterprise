@@ -26,6 +26,7 @@ function fixture() {
     status: 'RECORDED',
     executionAttempt: 0,
     headSha: 'a'.repeat(40),
+    baseSha: 'b'.repeat(40),
     reviewRunId: null,
     conversation,
   };
@@ -341,12 +342,14 @@ describe('collaboration execution ownership and fencing', () => {
     await f.service.enqueue(actor, 'turn-a');
     await f.service.execute(f.job());
     expect(f.turn.status).toBe('FAILED');
+    Object.assign(f.turn.conversation.pullRequest, { baseSha: 'c'.repeat(40) });
     await f.service.enqueue(actor, 'turn-a', 1);
     await f.service.enqueue(actor, 'turn-a', 1);
     expect(f.attempts).toHaveLength(2);
     await f.service.execute(f.job());
     expect(f.messages.filter((m) => m.kind === 'ASSISTANT')).toHaveLength(1);
     expect(f.attempts.map((a) => a.status)).toEqual(['FAILED', 'COMPLETED']);
+    expect(f.turn).toMatchObject({ headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40) });
     expect(JSON.stringify(f.audits)).not.toContain('credential-marker');
   });
   it('completed turns cannot be retried with a new attempt', async () => {

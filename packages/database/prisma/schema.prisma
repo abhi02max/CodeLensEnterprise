@@ -1025,6 +1025,7 @@ model CollaborationTurn {
   pullRequestId  String
   initiatedById  String
   headSha        String @db.VarChar(64)
+  baseSha        String? @db.VarChar(40)
   reviewRunId    String?
   status         CollaborationTurnStatus @default(RECORDED)
   sequence       Int
