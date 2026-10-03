@@ -9,5 +9,6 @@ export * from './ai-review';
 export * from './collaboration';
 export * from './conversation';
 export * from './investigation';
+export * from './collaborator';
 export * from './audit';
 export * from './tool';

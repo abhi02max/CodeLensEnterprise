@@ -22,6 +22,7 @@ import {
   type JobStatus,
   type ManagedQueue,
   type SyncPullRequestsJobData,
+  type CollaborationJobData,
 } from './queue.types';
 
 /**
@@ -52,8 +53,10 @@ export class QueueService {
     @InjectQueue(QUEUE_NAMES.REPO_INDEX) repoIndex: Queue,
     @InjectQueue(QUEUE_NAMES.PR_SYNC) prSync: Queue,
     private readonly config: AppConfigService,
+    @InjectQueue(QUEUE_NAMES.COLLABORATION) collaboration: Queue,
   ) {
     this.queues = {
+      [QUEUE_NAMES.COLLABORATION]: collaboration,
       [QUEUE_NAMES.REVIEW_RUN]: reviewRun,
       [QUEUE_NAMES.REPO_INDEX]: repoIndex,
       [QUEUE_NAMES.PR_SYNC]: prSync,
@@ -61,6 +64,18 @@ export class QueueService {
   }
 
   // ---------------------------------------------------------------- enqueue
+
+  async enqueueCollaboration(data: CollaborationJobData): Promise<void> {
+    const queue = this.queues[QUEUE_NAMES.COLLABORATION];
+    const jobId = `collaborate-${data.turnId}-${data.attempt}`;
+    // Retained failures and completions are never removed/replayed. Explicit retry has a new attempt ID.
+    try {
+      if (await queue.getJob(jobId)) return;
+      await queue.add('collaborate', data, { jobId, attempts: 1 });
+    } catch {
+      throw new UpstreamUnavailableError('redis', 'Conversation saved; queue unavailable. Retry sending the same message.');
+    }
+  }
 
   /**
    * Queue a full analysis run.
@@ -206,6 +221,8 @@ export class QueueService {
    */
   async cancel(handle: string, organizationId: string): Promise<{ cancelled: boolean; state: JobState }> {
     const { queue: queueName, jobId } = decodeJobHandle(handle);
+    if (queueName === QUEUE_NAMES.COLLABORATION)
+      throw new ValidationError('Use the collaboration turn cancellation endpoint.');
     const job = await this.queues[queueName].getJob(jobId);
 
     if (!job || (job.data as BaseJobData | undefined)?.organizationId !== organizationId) {

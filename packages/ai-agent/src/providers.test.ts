@@ -3,6 +3,45 @@ import { OpenAiProvider, AnthropicProvider } from './providers';
 import { classifyAiFailure } from './ai-errors';
 
 afterEach(() => vi.unstubAllGlobals());
+it('keeps hypothetical native function calls outside the JSON-content contract', async () => {
+  // Synthetic structure, not an assertion about the discarded real response body.
+  const fetch = vi.fn(async () => new Response(JSON.stringify({
+    model: 'synthetic',
+    choices: [{ finish_reason: 'tool_calls', message: { content: null, tool_calls: [{
+      id: 'correlation-only', type: 'function', function: {
+        name: 'read_repository_metadata', arguments: '{}',
+      },
+    }] } }],
+    usage: { prompt_tokens: 100, completion_tokens: 8, total_tokens: 108 },
+  })));
+  vi.stubGlobal('fetch', fetch);
+  const result = await new OpenAiProvider({ apiKey: 'synthetic-only', model: 'synthetic' })
+    .complete({ messages: [], jsonMode: true, retryAttempts: 1 });
+  expect(result).toMatchObject({ content: '', finishReason: 'tool_calls' });
+  expect(result).not.toHaveProperty('toolCalls');
+  const request = JSON.parse(fetch.mock.calls[0]![1].body);
+  expect(request.response_format).toEqual({ type: 'json_object' });
+  expect(request).not.toHaveProperty('tools');
+  expect(request).not.toHaveProperty('tool_choice');
+});
+it.each([OpenAiProvider, AnthropicProvider])('lets bounded orchestration reserve each transport without hidden retries', async (Provider) => {
+  const fetch = vi.fn(async () => new Response('{}', { status: 429 }));
+  vi.stubGlobal('fetch', fetch);
+  await expect(new Provider({ apiKey: 'synthetic-only', model: 'synthetic' })
+    .complete({ messages: [], retryAttempts: 1 })).rejects.toThrow('429');
+  expect(fetch).toHaveBeenCalledOnce();
+});
+it.each([OpenAiProvider, AnthropicProvider])('passes transport abort signal without converting it into a retry', async (Provider) => {
+  const controller = new AbortController();
+  const fetch = vi.fn(async (_url, options) => {
+    expect(options.signal).toBe(controller.signal);
+    throw new DOMException('aborted', 'AbortError');
+  });
+  vi.stubGlobal('fetch', fetch);
+  await expect(new Provider({ apiKey: 'synthetic-only', model: 'synthetic' })
+    .complete({ messages: [], retryAttempts: 1, signal: controller.signal })).rejects.toMatchObject({name: 'AbortError'});
+  expect(fetch).toHaveBeenCalledOnce();
+});
 it('routes Gemini-compatible reviews to Google and identifies model failures as Gemini', async () => {
   const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { message: 'SECRET_PROVIDER_MARKER' } }), { status: 404 }));
   vi.stubGlobal('fetch', fetch);

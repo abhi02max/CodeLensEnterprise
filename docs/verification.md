@@ -815,6 +815,87 @@ re-certification remain **UNVERIFIED**. Local fix-pass evidence does not certify
 future commit, semantic retrieval/review quality, universal recovery, exactly-once
 effects, exhaustive accessibility, or universal secret non-leakage.
 
+## Phase 3C: Deterministic Collaboration Evidence
+
+The uncommitted Phase 3C implementation on `c54ba797bc34b441e4a7e638a26f613631d46dd7`
+connects persistent conversations to bounded asynchronous provider/tool execution.
+See [the implementation and evidence report](phase3c-collaborator.md) for the exact
+38-file inventory, state machine, protocol, budgets, API, isolated runtime evidence,
+adversarial corrections and remaining boundaries.
+
+Local evidence: 317 workspace tests, Prisma validation/generation, sequential
+typecheck and production package/API/worker/web builds passed. Real isolated
+PostgreSQL/Redis/BullMQ proved queued execution, persisted citations and follow-up,
+tenant isolation, bounded fake-citation repair, provider/RAG degradation,
+cancellation late-write rejection, managed upgrade and fresh migration lifecycle,
+historical-head readback and full-row restart persistence. The provider and GitHub
+reads were explicit mounted deterministic test boundaries, not real external calls.
+Focused browser proof passed 13 normal and 3 historical checks. The existing
+walkthrough retained its pre-existing 91/CRITICAL versus seeded 78/HIGH drift:
+81 checks passed, two failed, with two expected sign-in 401 diagnostics.
+
+The separately approved real-Gemini attempt called `gemini-3.8-flash` four times:
+three HTTP 503 responses and one HTTP 200 response with `finish_reason=tool_calls`
+and no JSON message content (native payload fields were not captured). The bounded
+engine stopped at `FAILED / PROVIDER_BUDGET`, preserving the
+human question and persisting no assistant/tools/evidence. Failure readback and
+scoped credential checks passed; further paid calls stopped. Successful real
+collaboration, follow-up and real-provider injection/citation behavior remain
+unverified. The full report preserves this failed attempt and its exact counters.
+Prior Phase 2 real Gemini review evidence is not invalidated or expanded by this
+separate collaboration attempt. No product workaround or provider switching occurred.
+Follow-up classification is **D: NOT PROVEN**: the capture omitted native tool-call
+fields/arguments, so finish reason alone cannot prove valid tool requests or an
+adapter defect. No additional real request occurred. Two diagnostic tests passed
+with 61 AI / 110 API targeted cases. Four requests and 6,008 reserved units reconcile;
+`providerRetries=3` currently counts retryable failures, not executed retry requests
+(two transient retries actually ran). That counter-semantics concern remains
+disclosed without production changes or relaxed budgets. The full report describes
+the proposed separately approved single-request structural diagnostic.
+A subsequent separately approved **single POST** returned HTTP 200 / `stop` with
+122 bytes of normal JSON content validating as `REQUEST_TOOLS`; native tool-call
+fields were absent. This diagnostic is **A: NORMAL JSON-IN-CONTENT RESPONSE**, not
+successful end-to-end collaboration. No tools, repair or second provider request
+ran. Raw payloads were not retained, and isolated runtime was restored to
+credential-free configuration. The prior anomaly did not reproduce and its missing
+fields remain unproven. Production parsing and retry-counter semantics are unchanged.
+
+The final separately approved normal queued attempt used a fresh conversation
+`cmus0e21o0003o801mkc80cqs`, turn `cmus0e24e0007o801gx7jgb27`. Five real Gemini
+requests returned 200/503/200/503/200; three valid JSON-content tool-request actions
+executed five Phase 3B tools and persisted thirteen scoped references (eight
+SNAPSHOT file/diff references and five DERIVED report/static references). Selected
+persisted evidence reached subsequent provider contexts, at most 11,760 bytes.
+The fifth request requested further investigation, not a final answer; the engine
+stopped at FAILED / PROVIDER_BUDGET after 58,533 ms, with 4,382 reserved/charged
+output units, two observed retryable failures, zero repairs and three rounds.
+No assistant/citations persisted and no follow-up was submitted. No native anomaly
+or production defect was established. Tool/persistence/context mechanics are now
+real-provider runtime-proven; grounded final answer, real citations and multi-turn
+success remain unverified. All thirteen individual evidence endpoints and scoped
+DB/audit consistency passed; browser failure/reload was truthful. Scoped credential
+checks found zero supplied-value matches; API/worker were restored credential-free.
+Relevant deterministic regressions rerun: 61 AI and 110 API tests passed. The full
+report preserves all earlier attempts and metric semantics. No additional paid
+campaign, production fix, commit, GitHub mutation or Phase 3D work followed.
+
+Accepted Phase 3C status:
+
+- Phase 3C deterministic verification: **PASSED**
+- Real Gemini investigation/tool/evidence path: **PARTIALLY VERIFIED**
+- Real Gemini final grounded response/citation path: **NOT VERIFIED**
+- Real Gemini multi-turn collaboration: **NOT VERIFIED**
+
+No successful final Gemini RESPOND, real-provider final citation persistence,
+real-provider semantic answer quality, real-provider multi-turn follow-up or full
+real-provider pass is claimed. The user accepted these limitations for commit.
+Citation validation is mechanical; cancellation does not guarantee remote billing
+stops; crash/deadline recovery is test-proven, not host-level runtime certification.
+Canonical Prettier debt remains 143 files before/after this diff; unchanged Ruff
+debt, older clipping observations and other previously disclosed limits remain.
+Existing migrations are unchanged. No GitHub mutation or Phase 3D implementation
+occurred. Hosted CI and exact-revision certification of this diff remain unverified.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.

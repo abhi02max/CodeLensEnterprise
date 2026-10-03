@@ -94,7 +94,7 @@ const securityMessage = await owner(
   `/conversations/${securityConversation.id}/messages`,
   'POST',
   { requestId: crypto.randomUUID(), content: 'Scoped evidence references' },
-  201,
+  202,
 );
 const securityTurn = securityMessage.message.turn.id;
 const foreignFinding = await owner(
@@ -180,8 +180,8 @@ try {
   const title = `refund browser proof ${Date.now()}`;
   await panel.getByLabel('Conversation title').fill(title);
   await panel.getByRole('button', { name: 'New conversation', exact: true }).click();
-  await panel.getByLabel('Conversation message').fill('Inspect risk without a new model call');
-  await panel.getByRole('button', { name: 'Save message', exact: true }).click();
+  await panel.getByLabel('Conversation message').fill('Inspect persisted risk evidence');
+  await panel.getByRole('button', { name: 'Send message', exact: true }).click();
   const inspect = panel.getByRole('region', { name: 'Investigation evidence', exact: true });
   await inspect.getByRole('button', { name: 'Inspect risk evidence', exact: true }).click();
   await inspect.getByText('DERIVED', { exact: true }).waitFor();

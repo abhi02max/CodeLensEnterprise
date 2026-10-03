@@ -102,6 +102,7 @@ export class OpenAiProvider implements LlmProvider {
     maxOutputTokens?: number;
     jsonMode?: boolean;
     signal?: AbortSignal;
+    retryAttempts?: number;
   }): Promise<LlmCompletion> {
     const baseUrl = this.config.baseUrl ?? 'https://api.openai.com/v1';
 
@@ -153,7 +154,7 @@ export class OpenAiProvider implements LlmProvider {
         };
       },
       {
-        attempts: 3,
+        attempts: params.retryAttempts ?? 3,
         baseDelayMs: 2000,
         maxDelayMs: 30_000,
         shouldRetry: (error) => error instanceof LlmProviderError && error.retryable,
@@ -175,6 +176,7 @@ export class AnthropicProvider implements LlmProvider {
     maxOutputTokens?: number;
     jsonMode?: boolean;
     signal?: AbortSignal;
+    retryAttempts?: number;
   }): Promise<LlmCompletion> {
     const baseUrl = this.config.baseUrl ?? 'https://api.anthropic.com';
 
@@ -245,7 +247,7 @@ export class AnthropicProvider implements LlmProvider {
         };
       },
       {
-        attempts: 3,
+        attempts: params.retryAttempts ?? 3,
         baseDelayMs: 2000,
         maxDelayMs: 30_000,
         shouldRetry: (error) => error instanceof LlmProviderError && error.retryable,

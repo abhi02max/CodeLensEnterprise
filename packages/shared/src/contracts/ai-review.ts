@@ -258,5 +258,7 @@ export interface LlmProvider {
     /** Request strict JSON output where the provider supports it. */
     jsonMode?: boolean;
     signal?: AbortSignal;
+    /** Disable adapter retries when a caller reserves each transport request itself. */
+    retryAttempts?: number;
   }): Promise<LlmCompletion>;
 }

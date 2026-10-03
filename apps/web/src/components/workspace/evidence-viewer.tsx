@@ -11,9 +11,11 @@ import { ApiError } from '@/lib/api-client';
 export function EvidenceViewer({
   turn,
   conversation,
+  selectedEvidenceId,
 }: {
   turn: CollaborationTurnView;
   conversation: ConversationView;
+  selectedEvidenceId?: string | null;
 }) {
   const client = useQueryClient();
   const [selected, setSelected] = React.useState<string | null>(null);
@@ -21,7 +23,16 @@ export function EvidenceViewer({
   const list = useQuery({
     queryKey: ['investigations', turn.id],
     queryFn: () => api.investigations(turn.id),
+    refetchInterval: ['QUEUED', 'RUNNING'].includes(turn.status) ? 1000 : false,
   });
+  const citation = useQuery({
+    queryKey: ['evidence', selectedEvidenceId],
+    enabled: !!selectedEvidenceId,
+    queryFn: () => api.evidence(selectedEvidenceId!),
+  });
+  React.useEffect(() => {
+    if (citation.data) setSelected(citation.data.toolCallId);
+  }, [citation.data]);
   const detail = useQuery({
     queryKey: ['investigation', selected],
     enabled: !!selected,
@@ -74,27 +85,31 @@ export function EvidenceViewer({
     >
       <h4 className="text-sm font-medium">Evidence for message #{turn.sequence}</h4>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button size="sm" disabled={run.isPending} onClick={inspect}>
+        <Button
+          size="sm"
+          disabled={run.isPending || ['QUEUED', 'RUNNING'].includes(turn.status)}
+          onClick={inspect}
+        >
           <Search size={14} aria-hidden="true" />
           Inspect context
         </Button>
         <Button
           size="sm"
-          disabled={run.isPending}
+          disabled={run.isPending || ['QUEUED', 'RUNNING'].includes(turn.status)}
           onClick={() => run.mutate({ tool: 'read_pr_diff', input: {} })}
         >
           Inspect PR diff
         </Button>
         <Button
           size="sm"
-          disabled={run.isPending}
+          disabled={run.isPending || ['QUEUED', 'RUNNING'].includes(turn.status)}
           onClick={() => run.mutate({ tool: 'read_analysis_evidence', input: { source: 'ML' } })}
         >
           Inspect risk evidence
         </Button>
         <Button
           size="sm"
-          disabled={run.isPending}
+          disabled={run.isPending || ['QUEUED', 'RUNNING'].includes(turn.status)}
           onClick={() =>
             run.mutate({
               tool: 'retrieve_context',
@@ -143,6 +158,7 @@ export function EvidenceViewer({
         ))}
       </ul>
       {selected && detail.isPending && <p role="status">Loading evidence...</p>}
+      {citation.isError && <Alert tone="danger">Cited evidence is no longer available.</Alert>}
       {detail.isError && <Alert tone="danger">Could not load the investigation.</Alert>}
       {detail.data && (
         <div className="space-y-3" aria-label="Observed evidence">

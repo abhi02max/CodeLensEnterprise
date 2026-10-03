@@ -44,6 +44,7 @@ export const TENANT_SCOPED_MODELS = [
   'AiSettings',
   'Conversation',
   'CollaborationTurn',
+  'CollaborationAttempt',
   'ConversationMessage',
   'CollaborationToolCall',
   'EvidenceReference',

@@ -6,6 +6,7 @@ import { HealthService } from '../health/health.service';
 import { ReviewRunProcessor } from './processors/review-run.processor';
 import { RepoIndexProcessor } from './processors/repo-index.processor';
 import { PrSyncProcessor } from './processors/pr-sync.processor';
+import { CollaborationProcessor } from './processors/collaboration.processor';
 import { createShutdown } from './shutdown';
 import { MANAGED_QUEUES } from './queue.types';
 
@@ -14,7 +15,7 @@ export function installShutdown(app: INestApplicationContext): (signal: string) 
   const logger = new Logger('Shutdown');
   const shutdown = createShutdown({
     workers: () => [app.get(ReviewRunProcessor).worker, app.get(RepoIndexProcessor).worker,
-      app.get(PrSyncProcessor).worker],
+      app.get(PrSyncProcessor).worker, app.get(CollaborationProcessor).worker],
     closeQueues: async () => {
       await Promise.all(MANAGED_QUEUES.map((name) => app.get<Queue>(getQueueToken(name)).close()));
     },

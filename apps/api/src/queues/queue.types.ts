@@ -12,6 +12,7 @@ import { NotFoundError } from '../common/errors';
  * alongside their processors.
  */
 export const MANAGED_QUEUES = [
+  QUEUE_NAMES.COLLABORATION,
   QUEUE_NAMES.REVIEW_RUN,
   QUEUE_NAMES.REPO_INDEX,
   QUEUE_NAMES.PR_SYNC,
@@ -35,6 +36,11 @@ export interface BaseJobData {
   /** Null for webhook- and schedule-driven work, which has no human actor. */
   userId: string | null;
   traceId: string;
+}
+
+export interface CollaborationJobData extends BaseJobData {
+  turnId: string;
+  attempt: number;
 }
 
 export interface AnalyzePullRequestJobData extends BaseJobData {
@@ -74,7 +80,9 @@ export type JobDataFor<Q extends ManagedQueue> = Q extends typeof QUEUE_NAMES.RE
     ? IndexRepositoryJobData
     : Q extends typeof QUEUE_NAMES.PR_SYNC
       ? SyncPullRequestsJobData
-      : never;
+      : Q extends typeof QUEUE_NAMES.COLLABORATION
+        ? CollaborationJobData
+        : never;
 
 /**
  * Progress payload.

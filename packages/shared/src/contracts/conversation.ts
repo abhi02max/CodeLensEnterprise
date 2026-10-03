@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CollaborationCitation, CollaborationExecutionState } from './collaborator';
 
 const ReferenceId = z.string().min(1).max(64);
 const Path = z
@@ -90,7 +91,7 @@ export interface CollaborationTurnView {
   headSha: string;
   reviewRunId: string | null;
   sequence: number;
-  status: 'RECORDED';
+  status: CollaborationExecutionState;
   initiatedById: string;
   createdAt: string;
 }
@@ -98,7 +99,10 @@ export interface ConversationMessageView {
   id: string;
   conversationId: string;
   sequence: number;
-  kind: 'HUMAN';
+  kind: 'HUMAN' | 'ASSISTANT';
+  citations?: CollaborationCitation[];
+  provider?: string | null;
+  model?: string | null;
   content: string;
   createdBy: { id: string; name: string };
   turn: CollaborationTurnView;
@@ -112,9 +116,9 @@ export interface ConversationDetail {
   conversation: ConversationView;
   messages: ConversationMessageView[];
   nextAfterSequence: number | null;
-  aiExecutionAvailable: false;
+  aiExecutionAvailable: boolean;
 }
 export interface CreateConversationMessageResponse {
   message: ConversationMessageView;
-  aiExecutionAvailable: false;
+  aiExecutionAvailable: boolean;
 }

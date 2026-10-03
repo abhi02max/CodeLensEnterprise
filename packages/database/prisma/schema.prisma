@@ -978,10 +978,17 @@ enum ConversationStatus {
 
 enum CollaborationTurnStatus {
   RECORDED
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  INTERRUPTED
 }
 
 enum ConversationMessageKind {
   HUMAN
+  ASSISTANT
 }
 
 model Conversation {
@@ -1030,6 +1037,8 @@ model CollaborationTurn {
   reviewRun ReviewRun? @relation(fields: [reviewRunId, organizationId, pullRequestId], references: [id, organizationId, pullRequestId], onDelete: NoAction)
   messages ConversationMessage[]
   toolCalls CollaborationToolCall[]
+  attempts CollaborationAttempt[]
+  executionAttempt Int @default(0)
 
   @@unique([id, conversationId, organizationId])
   @@unique([id, organizationId, pullRequestId])
@@ -1047,6 +1056,9 @@ model ConversationMessage {
   sequence       Int
   kind           ConversationMessageKind @default(HUMAN)
   content        String @db.Text
+  citations      Json @default("[]")
+  provider       String? @db.VarChar(32)
+  model          String? @db.VarChar(128)
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
@@ -1054,7 +1066,41 @@ model ConversationMessage {
   createdBy User @relation(fields: [createdById], references: [id], onDelete: Restrict)
 
   @@unique([conversationId, sequence])
+  @@unique([turnId, kind])
   @@index([organizationId, conversationId, sequence])
+}
+
+model CollaborationAttempt {
+  id String @id @default(cuid())
+  organizationId String
+  turnId String
+  pullRequestId String
+  number Int
+  status String @default("QUEUED") @db.VarChar(16)
+  fence String @db.VarChar(64)
+  policyVersion String @default("collaborator-v1") @db.VarChar(32)
+  traceId String @db.VarChar(128)
+  provider String? @db.VarChar(32)
+  model String? @db.VarChar(128)
+  failureCategory String? @db.VarChar(32)
+  providerRequests Int @default(0)
+  providerRetries Int @default(0)
+  repairs Int @default(0)
+  rounds Int @default(0)
+  toolCalls Int @default(0)
+  contextBytes Int @default(0)
+  outputTokens Int @default(0)
+  providerDurationMs Int @default(0)
+  toolDurationMs Int @default(0)
+  availableEvidenceIds Json @default("[]")
+  createdAt DateTime @default(now())
+  startedAt DateTime?
+  deadlineAt DateTime?
+  completedAt DateTime?
+  turn CollaborationTurn @relation(fields: [turnId, organizationId, pullRequestId], references: [id, organizationId, pullRequestId], onDelete: Cascade)
+  @@unique([turnId, number])
+  @@index([organizationId, turnId])
+  @@index([status, deadlineAt])
 }
 
 model CollaborationToolCall {

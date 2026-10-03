@@ -136,6 +136,7 @@ export function estimateTokens(text: string): number {
 // ---------------------------------------------------------------- queues
 
 export const QUEUE_NAMES = {
+  COLLABORATION: 'collaboration',
   REVIEW_RUN: 'review-run',
   REPO_INDEX: 'repo-index',
   PR_SYNC: 'pr-sync',

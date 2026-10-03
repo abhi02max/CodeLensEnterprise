@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Send, Plus } from 'lucide-react';
-import type { ConversationAnchor } from '@codelens/shared';
+import { Send, Plus, Square, RotateCcw } from 'lucide-react';
+import type { ConversationAnchor, CollaborationTurnView } from '@codelens/shared';
 import { Alert, Button, Input, Textarea } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
@@ -26,6 +26,9 @@ export function ConversationPanel({
   const [content, setContent] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [origin, setOrigin] = React.useState('PR');
+  const [citation, setCitation] = React.useState<{ turnId: string; evidenceId: string } | null>(
+    null,
+  );
   const choices: Array<{ key: string; label: string; anchor: ConversationAnchor }> = [
     { key: 'PR', label: 'Pull request', anchor: { kind: 'PR' } },
     { key: 'ML', label: 'Risk discussion', anchor: { kind: 'PR' } },
@@ -63,6 +66,10 @@ export function ConversationPanel({
     queryKey: ['conversation', selectedId, afterSequence],
     queryFn: () => api.conversation(selectedId!, afterSequence),
     enabled: selectedId !== null,
+    refetchInterval: (query) =>
+      query.state.data?.messages.some((m) => ['QUEUED', 'RUNNING'].includes(m.turn.status))
+        ? 1000
+        : false,
   });
 
   const create = useMutation({
@@ -113,9 +120,6 @@ export function ConversationPanel({
     <section aria-label="Collaborate" className="border-t border-surface-border pt-3">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-900">Collaborate</h2>
-        <p className="text-xs text-slate-500">
-          Human conversation only. AI execution is not available yet.
-        </p>
       </div>
       <form
         className="flex flex-wrap gap-2"
@@ -185,6 +189,7 @@ export function ConversationPanel({
                     setAfterSequence(0);
                     setContent('');
                     setError(null);
+                    setCitation(null);
                   }}
                 >
                   {row.title}
@@ -235,7 +240,7 @@ export function ConversationPanel({
                   {detail.data.messages.map((message) => (
                     <li key={message.id} className="border-l-2 border-surface-border pl-3">
                       <p className="text-xs text-slate-500">
-                        {message.createdBy.name}{' '}
+                        {message.kind === 'ASSISTANT' ? 'Assistant' : message.createdBy.name}{' '}
                         <span className="font-mono">
                           #{message.sequence} · {shortSha(message.turn.headSha)}
                         </span>
@@ -243,6 +248,30 @@ export function ConversationPanel({
                       <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-800">
                         {message.content}
                       </p>
+                      {message.kind === 'HUMAN' && (
+                        <TurnExecution
+                          turn={message.turn}
+                          conversationId={selectedId}
+                          currentHeadSha={context?.pullRequest.headSha}
+                        />
+                      )}
+                      {!!message.citations?.length && (
+                        <ul aria-label="Evidence citations" className="mt-2 space-y-1">
+                          {message.citations.map((c) => (
+                            <li key={c.evidenceId}>
+                              <button
+                                type="button"
+                                className="break-words text-left text-xs text-blue-700 underline focus-visible:outline focus-visible:outline-2"
+                                onClick={() =>
+                                  setCitation({ turnId: message.turn.id, evidenceId: c.evidenceId })
+                                }
+                              >
+                                {c.strength === 'OBSERVED' ? 'Observed' : 'Inferred'}: {c.claim}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ol>
@@ -251,8 +280,25 @@ export function ConversationPanel({
                     key={detail.data.messages[detail.data.messages.length - 1]!.turn.id}
                     turn={detail.data.messages[detail.data.messages.length - 1]!.turn}
                     conversation={detail.data.conversation}
+                    selectedEvidenceId={
+                      citation?.turnId ===
+                      detail.data.messages[detail.data.messages.length - 1]!.turn.id
+                        ? citation.evidenceId
+                        : null
+                    }
                   />
                 )}
+                {citation &&
+                  citation.turnId !==
+                    detail.data.messages[detail.data.messages.length - 1]?.turn.id &&
+                  detail.data.messages.find((m) => m.turn.id === citation.turnId) && (
+                    <EvidenceViewer
+                      key={citation.evidenceId}
+                      turn={detail.data.messages.find((m) => m.turn.id === citation.turnId)!.turn}
+                      conversation={detail.data.conversation}
+                      selectedEvidenceId={citation.evidenceId}
+                    />
+                  )}
                 <div className="flex gap-2">
                   {afterSequence > 0 && (
                     <Button
@@ -298,13 +344,81 @@ export function ConversationPanel({
                 loading={send.isPending}
               >
                 <Send size={14} aria-hidden="true" />
-                Save message
+                Send message
               </Button>
             </div>
           </form>
         </div>
       )}
     </section>
+  );
+}
+
+function TurnExecution({
+  turn,
+  conversationId,
+  currentHeadSha,
+}: {
+  turn: CollaborationTurnView;
+  conversationId: string;
+  currentHeadSha?: string;
+}) {
+  const client = useQueryClient();
+  const state = useQuery({
+    queryKey: ['collaboration-turn', turn.id],
+    queryFn: () => api.collaborationTurn(turn.id),
+    refetchInterval: (query) =>
+      ['QUEUED', 'RUNNING'].includes(query.state.data?.status ?? turn.status) ? 1000 : false,
+  });
+  const calls = useQuery({
+    queryKey: ['turn-activity', turn.id],
+    queryFn: () => api.investigations(turn.id),
+    enabled: state.data?.status === 'RUNNING',
+    refetchInterval: state.data?.status === 'RUNNING' ? 1000 : false,
+  });
+  React.useEffect(() => {
+    if (state.data && state.data.status !== turn.status)
+      void client.invalidateQueries({ queryKey: ['conversation', conversationId] });
+  }, [state.data?.status, turn.status, client, conversationId]);
+  const change = useMutation({
+    mutationFn: (command: 'cancel' | 'retry') =>
+      command === 'cancel'
+        ? api.cancelCollaboration(turn.id)
+        : api.retryCollaboration(turn.id, state.data!.attempt),
+    onSuccess: () => {
+      void state.refetch();
+      void client.invalidateQueries({ queryKey: ['conversation', conversationId] });
+    },
+  });
+  const status = state.data?.status ?? turn.status;
+  return (
+    <div className="mt-2 space-y-1 text-xs" aria-label="Turn execution">
+      <p role="status">
+        {status}
+        {state.data?.failureCategory && `: ${state.data.failureCategory}`}
+      </p>
+      {(state.data?.stale || (currentHeadSha && currentHeadSha !== turn.headSha)) && (
+        <p className="text-amber-700">Historical PR head; current head has changed.</p>
+      )}
+      {calls.data?.items.map((call) => (
+        <p key={call.id}>
+          {call.tool.replace(/_/g, ' ')}: {call.status} - {call.coverage}
+        </p>
+      ))}
+      {['QUEUED', 'RUNNING'].includes(status) && (
+        <Button size="sm" disabled={change.isPending} onClick={() => change.mutate('cancel')}>
+          <Square size={12} aria-hidden="true" /> Cancel turn
+        </Button>
+      )}
+      {state.data && ['RECORDED', 'FAILED', 'CANCELLED', 'INTERRUPTED'].includes(status) && (
+        <Button size="sm" disabled={change.isPending} onClick={() => change.mutate('retry')}>
+          <RotateCcw size={12} aria-hidden="true" /> Retry turn
+        </Button>
+      )}
+      {(state.isError || change.isError) && (
+        <Alert tone="danger">Turn status or command unavailable.</Alert>
+      )}
+    </div>
   );
 }
 

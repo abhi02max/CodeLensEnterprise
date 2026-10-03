@@ -9,6 +9,7 @@ import type {
   InvestigationResult,
   InvestigationTool,
   EvidenceView,
+  CollaborationExecutionView,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -139,6 +140,18 @@ export const api = {
     apiRequest<InvestigationResult>(`/collaboration-tools/${encodeURIComponent(id)}`),
   evidence: (id: string) =>
     apiRequest<EvidenceView>(`/evidence-references/${encodeURIComponent(id)}`),
+  collaborationTurn: (id: string) =>
+    apiRequest<CollaborationExecutionView>(`/collaboration-turns/${encodeURIComponent(id)}`),
+  cancelCollaboration: (id: string) =>
+    apiRequest<CollaborationExecutionView>(
+      `/collaboration-turns/${encodeURIComponent(id)}/cancel`,
+      { method: 'POST', body: {} },
+    ),
+  retryCollaboration: (id: string, attempt: number) =>
+    apiRequest<CollaborationExecutionView>(`/collaboration-turns/${encodeURIComponent(id)}/retry`, {
+      method: 'POST',
+      body: { attempt },
+    }),
   createConversation: (prId: string, input: CreateConversationInput) =>
     apiRequest<ConversationView>(`/review-sessions/${encodeURIComponent(prId)}/conversations`, {
       method: 'POST',

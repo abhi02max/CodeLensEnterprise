@@ -129,11 +129,11 @@ describe('conversation foundation', () => {
     expect(result.items.map((row) => row.id)).toEqual(['conversation-a']);
     expect(result.nextAfterId).toBe('conversation-a');
   });
-  it('reads bounded ordered history and truthfully disables AI', async () => {
+  it('reads bounded ordered history with collaboration execution enabled', async () => {
     const { service, db } = fixture();
     expect(
       await service.get(actor, 'conversation-a', { afterSequence: 0, limit: 20 }),
-    ).toMatchObject({ messages: [], nextAfterSequence: null, aiExecutionAvailable: false });
+    ).toMatchObject({ messages: [], nextAfterSequence: null, aiExecutionAvailable: true });
     expect(db.conversationMessage.findMany.mock.calls[0][0]).toMatchObject({
       orderBy: { sequence: 'asc' },
       take: 21,

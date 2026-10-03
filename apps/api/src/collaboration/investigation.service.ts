@@ -70,6 +70,7 @@ export class InvestigationService implements OnModuleInit {
     name: string,
     requestId: string,
     raw: unknown,
+    execution?: { signal: AbortSignal; attemptId: string; fence: string },
   ): Promise<InvestigationResult> {
     const tool = InvestigationToolSchema.parse(name);
     InvestigationRequestSchema.parse({ requestId, input: raw });
@@ -79,6 +80,9 @@ export class InvestigationService implements OnModuleInit {
     const reserved = await this.prisma.$transaction(async (db) => {
       await db.$queryRaw`SELECT id FROM "CollaborationTurn" WHERE id=${turnId} AND "organizationId"=${actor.organizationId} FOR UPDATE`;
       const scope = await this.scope(db, actor, turnId);
+      if (execution) await this.requireExecution(db, actor, turnId, execution);
+      else if (scope.status === 'RUNNING' || scope.status === 'QUEUED')
+        throw new ConflictError('AI investigation is active; manual reads must wait.');
       // Fenced expired reservations are never rerun automatically: outcome may have been interrupted.
       await this.expire(db, actor, turnId);
       const existing = await db.collaborationToolCall.findFirst({
@@ -127,12 +131,23 @@ export class InvestigationService implements OnModuleInit {
     if (!reserved.execute) return this.view(reserved.row);
     const call = reserved.row;
     const abort = new AbortController();
+    let rejectAbort: ((error: Error) => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      rejectAbort = reject;
+    });
+    const onAbort = () => {
+      abort.abort();
+      rejectAbort?.(new InvestigationFailure('CANCELLED'));
+    };
+    execution?.signal.addEventListener('abort', onAbort, { once: true });
+    if (execution?.signal.aborted) onAbort();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const remaining = Math.max(0, call.deadlineAt.getTime() - Date.now());
     let outcome: ToolObservation;
     try {
       outcome = await Promise.race([
         this.tools.execute(reserved.scope, tool, input, abort.signal),
+        cancelled,
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             abort.abort();
@@ -143,7 +158,12 @@ export class InvestigationService implements OnModuleInit {
     } catch (error) {
       const category = error instanceof InvestigationFailure ? error.category : 'UNAVAILABLE';
       outcome = {
-        status: category === 'TIMEOUT' ? 'TIMEOUT' : 'UNAVAILABLE',
+        status:
+          category === 'TIMEOUT'
+            ? 'TIMEOUT'
+            : category === 'CANCELLED'
+              ? 'CANCELLED'
+              : 'UNAVAILABLE',
         coverage: 'Investigation did not establish evidence',
         evidence: [],
         nextCursor: null,
@@ -152,6 +172,7 @@ export class InvestigationService implements OnModuleInit {
     } finally {
       if (timer) clearTimeout(timer);
       abort.abort();
+      execution?.signal.removeEventListener('abort', onAbort);
     }
     // Slow reads occur outside transactions; late settlements cannot write evidence.
     return this.prisma.$transaction(async (db) => {
@@ -162,6 +183,7 @@ export class InvestigationService implements OnModuleInit {
         include: INCLUDE,
       });
       if (current.status !== 'RUNNING' || current.fence !== call.fence) return this.view(current);
+      if (execution) await this.requireExecution(db, actor, turnId, execution);
       if (Date.now() > call.deadlineAt.getTime() && outcome.status !== 'TIMEOUT') {
         outcome = {
           status: 'TIMEOUT',
@@ -219,6 +241,27 @@ export class InvestigationService implements OnModuleInit {
         }),
       );
     });
+  }
+
+  private async requireExecution(
+    db: PrismaTransactionClient,
+    actor: ConversationActor,
+    turnId: string,
+    execution: { signal: AbortSignal; attemptId: string; fence: string },
+  ) {
+    if (execution.signal.aborted) throw new InvestigationFailure('CANCELLED');
+    const attempt = await db.collaborationAttempt.findFirst({
+      where: {
+        id: execution.attemptId,
+        organizationId: actor.organizationId,
+        turnId,
+        fence: execution.fence,
+        status: 'RUNNING',
+        deadlineAt: { gt: new Date() },
+        turn: { status: 'RUNNING' },
+      },
+    });
+    if (!attempt) throw new InvestigationFailure('CANCELLED');
   }
 
   private async expire(db: PrismaTransactionClient, actor: ConversationActor, turnId: string) {

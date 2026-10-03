@@ -14,6 +14,7 @@ import {
   type ConversationList,
   type CreateConversationMessageResponse,
   type GetConversationQuery,
+  CollaborationCitationSchema,
   type ListConversationsQuery,
 } from '@codelens/shared';
 import { GithubClientFactory } from '../auth/github-client.factory';
@@ -181,7 +182,7 @@ export class CollaborationService implements OnModuleInit {
       conversation: conversationView(row),
       messages: messages.slice(0, query.limit).map(messageView),
       nextAfterSequence: messages.length > query.limit ? messages[query.limit - 1]!.sequence : null,
-      aiExecutionAvailable: false,
+      aiExecutionAvailable: true,
     };
   }
 
@@ -277,6 +278,7 @@ export class CollaborationService implements OnModuleInit {
       where: {
         organizationId: actor.organizationId,
         conversationId: id,
+        kind: 'HUMAN',
         turn: { initiatedById: actor.userId, requestId },
       },
       include: MESSAGE_INCLUDE,
@@ -390,6 +392,9 @@ function messageView(row: MessageRow): ConversationMessageView {
     sequence: row.sequence,
     kind: row.kind,
     content: row.content,
+    citations: CollaborationCitationSchema.array().parse(row.citations ?? []),
+    provider: row.provider ?? null,
+    model: row.model ?? null,
     createdBy: row.createdBy,
     turn: {
       id: row.turn.id,

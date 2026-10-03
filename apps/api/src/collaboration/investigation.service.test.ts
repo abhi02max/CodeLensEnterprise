@@ -8,6 +8,7 @@ function fixture() {
   const calls: Array<Record<string, unknown>> = [];
   const evidence: Array<Record<string, unknown>> = [];
   const turn = {
+    status: 'RECORDED',
     id: 'turn-a',
     organizationId: 'org-a',
     pullRequestId: 'pr-a',
@@ -34,6 +35,7 @@ function fixture() {
     evidence: evidence.filter((x) => x.toolCallId === row.id),
   });
   const db = {
+    collaborationAttempt: { findFirst: vi.fn(async () => ({ id: 'attempt-a' })) },
     membership: {
       findFirst: vi.fn(async ({ where }) =>
         where.organizationId === 'org-a' && where.userId === 'user-a' ? { role: 'OWNER' } : null,
@@ -128,6 +130,52 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 describe('investigation reservation and finalization', () => {
+  it('blocks manual calls during AI execution', async () => {
+    const f = fixture();
+    f.turn.status = 'RUNNING';
+    await expect(
+      f.service.execute(actor, 'turn-a', 'read_repository_metadata', randomUUID(), {}),
+    ).rejects.toThrow('manual reads must wait');
+    expect(f.tools.execute).not.toHaveBeenCalled();
+  });
+  it('rejects stale execution fencing before reserving a tool', async () => {
+    const f = fixture();
+    f.db.collaborationAttempt.findFirst.mockResolvedValue(null);
+    await expect(
+      f.service.execute(
+        actor,
+        'turn-a',
+        'read_repository_metadata',
+        randomUUID(),
+        {},
+        { signal: new AbortController().signal, attemptId: 'old', fence: 'old' },
+      ),
+    ).rejects.toThrow('CANCELLED');
+    expect(f.calls).toHaveLength(0);
+  });
+  it('aborts in-flight reads and prevents late evidence after cancellation', async () => {
+    const f = fixture();
+    const abort = new AbortController();
+    let started = false;
+    f.tools.execute.mockImplementation(async (_scope, _name, _input, signal) => {
+      started = true;
+      return new Promise((_, reject) =>
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }),
+      );
+    });
+    const pending = f.service.execute(
+      actor,
+      'turn-a',
+      'read_repository_metadata',
+      randomUUID(),
+      {},
+      { signal: abort.signal, attemptId: 'attempt-a', fence: 'fence-a' },
+    );
+    while (!started) await new Promise((resolve) => setTimeout(resolve, 1));
+    abort.abort();
+    await expect(pending).rejects.toThrow('CANCELLED');
+    expect(f.evidence).toHaveLength(0);
+  });
   it('requires readiness without creating schema', async () => {
     const { service, db } = fixture();
     await expect(service.onModuleInit()).rejects.toThrow('schema is not ready');

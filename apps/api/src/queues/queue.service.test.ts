@@ -24,11 +24,24 @@ function job(runId: string, state: 'completed' | 'active') {
 }
 
 describe('analysis job deduplication', () => {
+  it('collaboration replay retains failed/completed jobs and explicit attempts get distinct IDs', async () => {
+    const queue = { getJob: vi.fn().mockResolvedValue({ getState: vi.fn().mockResolvedValue('failed'), remove: vi.fn() }), add: vi.fn() };
+    const service = new QueueService(queue as never, queue as never, queue as never,
+      { queue: { maxAttempts: 2 } } as never, queue as never);
+    const request = { organizationId: 'org', userId: 'user', traceId: 'trace', turnId: 'turn', attempt: 1 };
+    await service.enqueueCollaboration(request);
+    expect(queue.getJob).toHaveBeenCalledWith('collaborate-turn-1');
+    expect(queue.add).not.toHaveBeenCalled();
+    queue.getJob.mockResolvedValue(null);
+    await service.enqueueCollaboration({ ...request, attempt: 2 });
+    expect(queue.add).toHaveBeenCalledWith('collaborate', expect.objectContaining({ attempt: 2 }),
+      expect.objectContaining({ jobId: 'collaborate-turn-2', attempts: 1 }));
+  });
   it('keeps a completed job when it already points at the authoritative run', async () => {
     const existing = job('run-new', 'completed');
     const queue = { getJob: vi.fn().mockResolvedValue(existing), add: vi.fn() };
     const service = new QueueService(queue as never, queue as never, queue as never,
-      { queue: { maxAttempts: 2 } } as never);
+      { queue: { maxAttempts: 2 } } as never, queue as never);
 
     const result = await service.enqueueAnalysis(data, 'run-new');
     expect(result).toMatchObject({ deduplicated: true, reviewRunId: 'run-new', state: 'COMPLETED' });
@@ -41,7 +54,7 @@ describe('analysis job deduplication', () => {
     const next = job('run-new', 'completed');
     const queue = { getJob: vi.fn().mockResolvedValue(null), add: vi.fn().mockResolvedValue(next) };
     const service = new QueueService(queue as never, queue as never, queue as never,
-      { queue: { maxAttempts: 2 } } as never);
+      { queue: { maxAttempts: 2 } } as never, queue as never);
 
     const result = await service.enqueueAnalysis(data, 'run-new');
     expect(queue.getJob).toHaveBeenCalledWith(next.id);
@@ -55,7 +68,7 @@ describe('analysis job deduplication', () => {
     const active = job('run-old', 'active');
     const queue = { getJob: vi.fn().mockResolvedValue(active), add: vi.fn() };
     const service = new QueueService(queue as never, queue as never, queue as never,
-      { queue: { maxAttempts: 2 } } as never);
+      { queue: { maxAttempts: 2 } } as never, queue as never);
 
     const result = await service.enqueueAnalysis(data, 'run-old');
     expect(result).toMatchObject({ deduplicated: true, state: 'ACTIVE' });

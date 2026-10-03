@@ -43,3 +43,4 @@ export {
   classifyAiFailure,
   type AiFailureKind,
 } from './ai-errors';
+export * from './collaborator';

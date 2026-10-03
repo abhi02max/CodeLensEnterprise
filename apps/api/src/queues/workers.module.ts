@@ -5,6 +5,8 @@ import { RepositoriesModule } from '../repositories/repositories.module';
 import { PrSyncProcessor } from './processors/pr-sync.processor';
 import { RepoIndexProcessor } from './processors/repo-index.processor';
 import { ReviewRunProcessor } from './processors/review-run.processor';
+import { CollaborationModule } from '../collaboration/collaboration.module';
+import { CollaborationProcessor } from './processors/collaboration.processor';
 
 /**
  * Consumer half of the queue layer.
@@ -18,7 +20,7 @@ import { ReviewRunProcessor } from './processors/review-run.processor';
  * definition of how a job is executed. A separate worker wiring is how the two drift.
  */
 @Module({
-  imports: [AnalysisModule, RagModule, RepositoriesModule],
-  providers: [ReviewRunProcessor, RepoIndexProcessor, PrSyncProcessor],
+  imports: [AnalysisModule, RagModule, RepositoriesModule, CollaborationModule],
+  providers: [ReviewRunProcessor, RepoIndexProcessor, PrSyncProcessor, CollaborationProcessor],
 })
 export class WorkersModule {}
