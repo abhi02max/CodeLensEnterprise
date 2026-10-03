@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { InvestigationToolSchema } from './investigation';
+import { PatchIntentSchema } from './patch-proposal';
 
 export const COLLABORATION_EVIDENCE_TYPES = [
   'FILE_RANGE',
@@ -24,6 +25,7 @@ export const CollaborationCitationSchema = z
   })
   .strict();
 export const CollaboratorActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('PROPOSE_PATCH'), proposal: PatchIntentSchema }).strict(),
   z
     .object({
       action: z.literal('RESPOND'),

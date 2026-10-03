@@ -44,6 +44,7 @@ function fixture() {
     ];
   const audits: any[] = [],
     evidence: any[] = [];
+  const proposals: any[] = [];
   function matches(row: any, where: any): boolean {
     return Object.entries(where).every(([key, value]: [string, any]) => {
       if (value && typeof value === 'object') {
@@ -162,7 +163,14 @@ function fixture() {
     unscoped: db,
     $transaction: vi.fn((fn) => {
       const work = tail.then(async () => {
-        const before = structuredClone({ turn, conversation, attempts, messages, audits });
+        const before = structuredClone({
+          turn,
+          conversation,
+          attempts,
+          messages,
+          audits,
+          proposals,
+        });
         try {
           return await fn(db);
         } catch (error) {
@@ -171,6 +179,7 @@ function fixture() {
           attempts.splice(0, attempts.length, ...before.attempts);
           messages.splice(0, messages.length, ...before.messages);
           audits.splice(0, audits.length, ...before.audits);
+          proposals.splice(0, proposals.length, ...before.proposals);
           throw error;
         }
       });
@@ -202,11 +211,21 @@ function fixture() {
     getCall: vi.fn(),
     execute: vi.fn(),
   };
+  const patches = {
+    prepare: vi.fn(async () => ({ ids: ['evidence-a'] })),
+    persist: vi.fn(async () => {
+      const row = { id: 'proposal-a' };
+      proposals.push(row);
+      return row;
+    }),
+    get: vi.fn(),
+  };
   const service = new CollaborationExecutionService(
     prisma as never,
     queue as never,
     providers as never,
     investigation as never,
+    patches as never,
   );
   const job = () => ({
     ...actor,
@@ -228,6 +247,8 @@ function fixture() {
     investigation,
     conversation,
     job,
+    patches,
+    proposals,
   };
 }
 describe('collaboration execution ownership and fencing', () => {
@@ -482,5 +503,100 @@ describe('collaboration execution ownership and fencing', () => {
     expect(f.turn.status).toBe('FAILED');
     expect(f.attempts[0].failureCategory).toBe('INVALID_CITATION');
     expect(f.messages).toHaveLength(1);
+  });
+});
+
+function proposalFixture() {
+  const f = fixture();
+  const observation = {
+    id: 'evidence-a',
+    toolCallId: 'call-a',
+    sourceType: 'FILE_RANGE',
+    provenance: 'EXACT_REVISION',
+    observedRevision: 'a'.repeat(40),
+    excerpt: 'source',
+    metadata: {},
+    path: 'src/a.ts',
+    organizationId: 'org-a',
+    turnId: 'turn-a',
+  };
+  f.evidence.push(observation);
+  f.investigation.list.mockResolvedValue({ items: [{ id: 'call-a', status: 'SUCCESS' }] } as never);
+  f.investigation.getCall.mockResolvedValue({ evidence: [observation] });
+  f.complete.mockResolvedValue({
+    content: JSON.stringify({
+      action: 'PROPOSE_PATCH',
+      proposal: {
+        summary: 'Proposed',
+        rationale: 'Context',
+        limitations: 'Not applied',
+        files: [
+          {
+            operation: 'MODIFY',
+            path: 'src/a.ts',
+            expectedBlobSha: 'c'.repeat(40),
+            evidenceIds: ['evidence-a'],
+            edits: [{ startLine: 1, endLine: 1, expectedText: 'old', replacement: 'new' }],
+          },
+        ],
+      },
+    }),
+    model: 'stub',
+    usage: { completionTokens: 50, promptTokens: 10, totalTokens: 60 },
+    costCents: 0,
+    finishReason: 'stop',
+  });
+  return f;
+}
+describe('proposal finalization uses the existing attempt fence', () => {
+  it('persists one proposal and truthful assistant together; completed delivery cannot duplicate it', async () => {
+    const f = proposalFixture();
+    await f.service.enqueue(actor, 'turn-a');
+    await f.service.execute(f.job());
+    expect(f.turn.status).toBe('COMPLETED');
+    expect(f.proposals).toHaveLength(1);
+    expect(f.messages[1].content).toBe('I prepared a proposed change for review.');
+    expect(f.messages[1].citations[0].strength).toBe('INFERRED');
+    await f.service.execute(f.job());
+    expect(f.patches.persist).toHaveBeenCalledTimes(1);
+  });
+  it('cancellation during exact-source preparation prevents proposal and assistant finalization', async () => {
+    const f = proposalFixture();
+    let release: (() => void) | undefined;
+    f.patches.prepare.mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { ids: ['evidence-a'] };
+    });
+    await f.service.enqueue(actor, 'turn-a');
+    const running = f.service.execute(f.job());
+    while (!release) await new Promise((resolve) => setTimeout(resolve, 1));
+    await f.service.cancel(actor, 'turn-a');
+    release();
+    await running;
+    expect(f.patches.persist).not.toHaveBeenCalled();
+    expect(f.messages).toHaveLength(1);
+    expect(f.proposals).toHaveLength(0);
+  });
+  it('deadline crossed by final audit rolls back proposal and assistant atomically', async () => {
+    vi.useFakeTimers();
+    try {
+      const f = proposalFixture(),
+        audit = f.db.auditLog.create.getMockImplementation()!;
+      f.db.auditLog.create.mockImplementation(async (args) => {
+        const result = await audit(args);
+        if (args.data.action === 'collaboration.turn.completed')
+          vi.setSystemTime(new Date(Date.now() + 90001));
+        return result;
+      });
+      await f.service.enqueue(actor, 'turn-a');
+      await f.service.execute(f.job());
+      expect(f.proposals).toHaveLength(0);
+      expect(f.messages).toHaveLength(1);
+      expect(f.turn.status).toBe('FAILED');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

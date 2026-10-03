@@ -956,6 +956,92 @@ GitHub mutation, PatchProposal, PROPOSE_PATCH, proposal UI, patch execution or P
 real-provider limitations remain unchanged. Hosted CI for this uncommitted
 prerequisite diff is not claimed.
 
+## Phase 3D: Structured Immutable Patch Proposals
+
+Starting HEAD: `ea195a6d22295f93784303f27096fbbfb23d2692`.
+This section describes the uncommitted Phase 3D working tree, not hosted CI or a
+release certification. Architecture, APIs, bounds and the proposed file inventory
+are recorded in `docs/phase3d-patch-proposals.md`.
+
+**Deterministic implementation and isolated runtime verification: PASSED.**
+Proposals are immutable review data, not applied code. Acceptance is only human
+approval for a future application step. No repository application, shell execution,
+branch/commit/push, GitHub write or Phase 3E operation was added.
+
+Isolated project: `codelens_phase3d_20261003`; new volumes
+`codelens_phase3d_20261003_postgres_data` and
+`codelens_phase3d_20261003_redis_data`; web/API loopback ports 53404/54404.
+No original CodeLens or previous-phase resources were modified by these checks.
+Final API/worker image:
+`sha256:bdd29e414a9ed72d49a82d49a4712613ebab62a3eb023d7423b037be0a1e90a6`;
+web image:
+`sha256:e4a03ce8d33c01c03350c720e81b55f6bc7c22d379ba2fe2e33ace58d795c7bc`.
+Synthetic provider and read-only Git transport substitutes were mounted from
+ignored proof files. The production exact Git verifier was not replaced. Real
+GitHub HTTP is explicitly blocked in the final proof transport.
+
+| Proof | Result |
+| --- | --- |
+| Fresh normal db-init | All six migrations applied; all 38 application tables empty before explicit seed |
+| Foundation upgrade | Prior-column fingerprints for all 35 existing tables unchanged; conversation/message/tool/evidence sentinels survived; historical base stayed null |
+| Repeated db-init/restart | Managed state, no pending migrations, RAG verification; proposal/file/evidence snapshots unchanged after normal stop/start |
+| Queued collaboration | Real API/Redis/BullMQ/worker/PostgreSQL; paired exact pins; two deterministic provider requests, one persisted tool call; canonical proposal and evidence readback |
+| Human lifecycle | Eight parallel identical accept requests; opposing decision conflict; four identical human revisions produce one unaccepted child; rejection persists |
+| Replay/pagination | No duplicate proposal after submission/worker replay; decision replay after supersession does not revive parent; scoped conversation/turn pagination readback |
+| Database immutability/audit | Proposal/file/evidence update/delete guards reject tampering; original content fingerprint preserved; checked audit metadata contains no source/diff |
+| Concurrency | Real database accept/reject has one winner; decision change fences a prepared revision; completed duplicate worker delivery returns NOT_REPLAYED |
+| Stale head | Historical pins remain unchanged; API and browser show stale relative to recorded PR head; inconsistent new turn pinning rejects rather than repins |
+| Proposal browser | Ten checks passed: diff, evidence, reload, accept, human v2, reject, normal feedback/AI v3, no execution controls, 390px overflow check, no unhandled exceptions |
+| Existing browser critical path | Passed after its documented credential-free live demo analysis prerequisite; 117 API requests, no JS/network errors, eight navigation cancellations |
+| Existing seeded walkthrough | 81 passed, two known failures expecting 91/CRITICAL against unchanged seed 78/HIGH; two sign-in 401 console messages, zero layout issues |
+| Non-mutation | HEAD, Git index hash, all refs and deterministic source/transport fingerprint unchanged across the final runtime verification window |
+| Production diagnostic regression | Intentionally invalid ORM write emitted no supplied synthetic proposal payload in captured stdout/stderr |
+
+The first critical-path invocation was against only seeded findings and stopped
+at its live line-58 prerequisite. It was rerun without assertion changes after
+normal isolated analysis, and passed. Proof-driver selection/startup issues were
+corrected locally; they are not production fixes or committed evidence artifacts.
+One host interruption stopped containers during earlier verification; ordinary
+restart persistence was subsequently tested deliberately. This is not SIGKILL or
+active-job recovery evidence.
+
+Final workspace regressions: **437 tests passed** (shared 1, AI 82, database 17,
+GitHub 57, static analysis 11, RAG 29, API 240). Includes 50 patch construction/
+boundary tests, eight proposal-service cases, three protocol/repair tests and
+26 execution tests. Prisma validate/generate, sequential typecheck, package/API/
+web production builds and final Docker builds passed. `git diff --check` passed.
+Tracked-content formatting comparison stayed **143 before / 143 after**, with no
+new failures or unrelated formatting cleanup. Python/Ruff debt was not changed.
+
+Scoped adversarial corrections: redundant nested Prisma scope fields removed
+without weakening composite FKs; raw production ORM error logging disabled to
+avoid write-argument disclosure; identical revision replay covers the preparation
+race window; recorded decision replay cannot revive a superseded proposal;
+evidence readback is independent of message pagination; proposal lists are paged;
+prior revision intent enters bounded context as untrusted history; safe patch audit
+actions are recognized by the existing typed audit contract.
+Limit tests also isolate distinct paths, distinct evidence, serialized intent
+bytes and aggregate multi-file changed lines so unrelated validation cannot mask
+the boundary under test.
+
+All five earlier migrations and their lock file remain byte-identical to HEAD.
+`0_baseline` SHA-256 remains
+`e3ea352f1566612be1d402caa215382002e2b2fe299f4818acaf4fc3d2bbe8ab`.
+Only additive migration `20261003020000_patch_proposals` is new. Its applied local
+bytes are frozen. No real provider request or GitHub mutation occurred. Proof
+drivers, local Compose/environment files, screenshots and generated reports remain
+ignored and excluded from production image contexts and the proposed commit.
+
+Limits remain explicit: MODIFY only; no application/testing of proposed changes;
+staleness uses recorded PR metadata; provider output remains subject to the stricter
+existing 2,000-byte guard; large historical proposal context can hit existing
+12-KiB context limits; no exactly-once external effects, universal credential
+non-leakage, semantic quality, comprehensive accessibility or real-provider patch
+pass is claimed. Content retention guards require a separately designed deletion
+policy. Phase 3C deterministic verification remains PASSED; real Gemini
+investigation/tool/evidence PARTIALLY VERIFIED; final grounded response/citations
+NOT VERIFIED; multi-turn real-provider collaboration NOT VERIFIED.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.

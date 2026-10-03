@@ -1040,6 +1040,9 @@ model CollaborationTurn {
   toolCalls CollaborationToolCall[]
   attempts CollaborationAttempt[]
   executionAttempt Int @default(0)
+  revisionOfProposalId String?
+  proposals PatchProposal[] @relation("OriginatingTurn")
+  revisionOfProposal PatchProposal? @relation("RevisionTarget", fields: [revisionOfProposalId], references: [id], onDelete: Restrict)
 
   @@unique([id, conversationId, organizationId])
   @@unique([id, organizationId, pullRequestId])
@@ -1164,8 +1167,77 @@ model EvidenceReference {
   metadata Json @default("{}")
   observedAt DateTime @default(now())
   toolCall CollaborationToolCall @relation(fields: [toolCallId, turnId, organizationId], references: [id, turnId, organizationId], onDelete: Cascade)
+  proposals PatchProposalEvidence[]
+  @@unique([id, organizationId, turnId])
   @@unique([toolCallId, ordinal])
   @@index([organizationId, turnId])
+}
+
+model PatchProposal {
+  id String @id @default(cuid())
+  organizationId String
+  repositoryId String
+  pullRequestId String
+  conversationId String
+  turnId String
+  attemptId String? @unique
+  parentId String? @unique
+  authorId String
+  authorType String @db.VarChar(8)
+  provider String? @db.VarChar(32)
+  model String? @db.VarChar(128)
+  requestId String @db.VarChar(64)
+  requestHash String @db.VarChar(64)
+  headSha String @db.VarChar(40)
+  baseSha String @db.VarChar(40)
+  revision Int
+  summary String @db.VarChar(300)
+  rationale String @db.Text
+  limitations String @db.Text
+  digest String @db.VarChar(64)
+  fileCount Int
+  changedLines Int
+  status String @default("PROPOSED") @db.VarChar(16)
+  createdAt DateTime @default(now())
+  decidedAt DateTime?
+  decidedById String?
+  decisionRequestId String? @db.VarChar(64)
+  turn CollaborationTurn @relation("OriginatingTurn", fields: [turnId, conversationId, organizationId], references: [id, conversationId, organizationId], onDelete: Restrict)
+  parent PatchProposal? @relation("ProposalRevision", fields: [parentId], references: [id], onDelete: Restrict)
+  child PatchProposal? @relation("ProposalRevision")
+  revisionTurns CollaborationTurn[] @relation("RevisionTarget")
+  files PatchProposalFile[]
+  evidence PatchProposalEvidence[]
+  @@unique([id, organizationId, turnId])
+  @@unique([turnId, authorId, requestId])
+  @@index([organizationId, conversationId, createdAt])
+}
+
+model PatchProposalFile {
+  id String @id @default(cuid())
+  proposalId String
+  organizationId String
+  turnId String
+  path String @db.VarChar(500)
+  operation String @default("MODIFY") @db.VarChar(8)
+  oldBlobSha String @db.VarChar(40)
+  oldContentHash String @db.VarChar(64)
+  newContentHash String @db.VarChar(64)
+  diff String @db.Text
+  edits Json
+  evidenceIds String[]
+  proposal PatchProposal @relation(fields: [proposalId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
+  @@unique([proposalId, path])
+}
+
+model PatchProposalEvidence {
+  proposalId String
+  organizationId String
+  turnId String
+  evidenceId String
+  proposal PatchProposal @relation(fields: [proposalId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
+  evidence EvidenceReference @relation(fields: [evidenceId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
+  @@id([proposalId, evidenceId])
 }
 
 enum ReviewVerdict {

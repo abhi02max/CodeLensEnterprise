@@ -10,6 +10,9 @@ import type {
   InvestigationTool,
   EvidenceView,
   CollaborationExecutionView,
+  PatchProposalView,
+  PatchIntent,
+  PatchProposalList,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -123,6 +126,25 @@ export const api = {
   conversations: (prId: string, afterId?: string) =>
     apiRequest<ConversationList>(
       `/review-sessions/${encodeURIComponent(prId)}/conversations${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
+    ),
+  patchProposals: (conversationId: string, afterId?: string) =>
+    apiRequest<PatchProposalList>(
+      `/conversations/${encodeURIComponent(conversationId)}/patch-proposals${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
+    ),
+  patchDecision: (id: string, requestId: string, decision: 'ACCEPTED' | 'REJECTED') =>
+    apiRequest<PatchProposalView>(`/patch-proposals/${encodeURIComponent(id)}/decision`, {
+      method: 'POST',
+      body: { requestId, decision },
+    }),
+  patchRevision: (id: string, requestId: string, proposal: PatchIntent) =>
+    apiRequest<PatchProposalView>(`/patch-proposals/${encodeURIComponent(id)}/revisions`, {
+      method: 'POST',
+      body: { requestId, proposal },
+    }),
+  patchFeedback: (id: string, requestId: string, content: string) =>
+    apiRequest<CreateConversationMessageResponse>(
+      `/patch-proposals/${encodeURIComponent(id)}/revision-request`,
+      { method: 'POST', body: { requestId, content } },
     ),
   investigate: (turnId: string, tool: InvestigationTool, requestId: string, input: unknown) =>
     apiRequest<InvestigationResult>(

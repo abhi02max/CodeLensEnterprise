@@ -3,7 +3,12 @@
 import * as React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
-import type { CollaborationTurnView, ConversationView, InvestigationTool } from '@codelens/shared';
+import type {
+  CollaborationTurnView,
+  ConversationView,
+  InvestigationTool,
+  EvidenceView,
+} from '@codelens/shared';
 import { Alert, Badge, Button } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
@@ -167,32 +172,34 @@ export function EvidenceViewer({
           </p>
           {detail.data.diagnostic && <Alert tone="warning">{detail.data.diagnostic}</Alert>}
           {detail.data.evidence.map((evidence) => (
-            <article key={evidence.id} className="border-l-2 border-surface-border pl-3">
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge tone="outline">{evidence.provenance}</Badge>
-                <span>{evidence.sourceType}</span>
-              </div>
-              <p className="mt-1 break-all font-mono text-xs">
-                {evidence.path ?? evidence.sourceId ?? 'Recorded observation'}
-                {evidence.startLine !== null && `:${evidence.startLine}-${evidence.endLine}`}
-              </p>
-              <p className="break-all text-xs text-slate-500">
-                Revision: {evidence.observedRevision ?? 'unknown'} · {evidence.method}
-              </p>
-              <p className="break-all font-mono text-xs text-slate-500">
-                SHA-256: {evidence.contentHash}
-              </p>
-              {evidence.truncated && <p className="text-xs text-amber-700">Truncated excerpt</p>}
-              {evidence.redacted && (
-                <p className="text-xs text-amber-700">Sensitive patterns redacted</p>
-              )}
-              <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words bg-surface-muted p-2 text-xs">
-                {evidence.excerpt}
-              </pre>
-            </article>
+            <EvidenceReferenceCard key={evidence.id} evidence={evidence} />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+export function EvidenceReferenceCard({ evidence }: { evidence: EvidenceView }) {
+  return (
+    <article className="border-l-2 border-surface-border pl-3">
+      <div className="flex flex-wrap gap-2 text-xs">
+        <Badge tone="outline">{evidence.provenance}</Badge>
+        <span>{evidence.sourceType}</span>
+      </div>
+      <p className="mt-1 break-all font-mono text-xs">
+        {evidence.path ?? evidence.sourceId ?? 'Recorded observation'}
+        {evidence.startLine !== null && `:${evidence.startLine}-${evidence.endLine}`}
+      </p>
+      <p className="break-all text-xs text-slate-500">
+        Revision: {evidence.observedRevision ?? 'unknown'} · {evidence.method}
+      </p>
+      <p className="break-all font-mono text-xs text-slate-500">SHA-256: {evidence.contentHash}</p>
+      {evidence.truncated && <p className="text-xs text-amber-700">Truncated excerpt</p>}
+      {evidence.redacted && <p className="text-xs text-amber-700">Sensitive patterns redacted</p>}
+      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words bg-surface-muted p-2 text-xs">
+        {evidence.excerpt}
+      </pre>
+    </article>
   );
 }

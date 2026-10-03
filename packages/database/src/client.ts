@@ -48,6 +48,9 @@ export const TENANT_SCOPED_MODELS = [
   'ConversationMessage',
   'CollaborationToolCall',
   'EvidenceReference',
+  'PatchProposal',
+  'PatchProposalFile',
+  'PatchProposalEvidence',
 ] as const;
 
 const TENANT_MODEL_SET: ReadonlySet<string> = new Set(TENANT_SCOPED_MODELS);
@@ -85,7 +88,9 @@ export class TenantScopeViolationError extends Error {
 
 function buildLogConfig(): Prisma.LogLevel[] {
   const level = process.env.LOG_LEVEL ?? 'info';
-  if (process.env.NODE_ENV === 'production') return ['warn', 'error'];
+  // Prisma validation errors can serialize whole write arguments, including source/patch text.
+  // Production domain handlers report bounded categories rather than raw ORM payloads.
+  if (process.env.NODE_ENV === 'production') return ['warn'];
   if (level === 'debug' || level === 'trace') return ['query', 'info', 'warn', 'error'];
   return ['warn', 'error'];
 }

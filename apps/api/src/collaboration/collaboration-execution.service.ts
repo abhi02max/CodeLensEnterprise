@@ -14,13 +14,14 @@ import {
   runCollaborator,
   type CollaborationAccounting,
 } from '@codelens/ai-agent';
-import { ConflictError, NotFoundError } from '../common/errors';
+import { ConflictError, NotFoundError, ValidationError } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueService } from '../queues/queue.service';
 import type { CollaborationJobData } from '../queues/queue.types';
 import type { ConversationActor } from './collaboration.service';
 import { CollaborationProviderService } from './collaboration-provider.service';
 import { InvestigationService } from './investigation.service';
+import { PatchProposalService } from './patch-proposal.service';
 
 const ACTIVE = ['QUEUED', 'RUNNING'];
 const RETRYABLE = ['RECORDED', 'FAILED', 'CANCELLED', 'INTERRUPTED'];
@@ -32,6 +33,7 @@ export class CollaborationExecutionService implements OnModuleInit {
     private readonly queue: QueueService,
     private readonly providers: CollaborationProviderService,
     private readonly investigation: InvestigationService,
+    private readonly patches: PatchProposalService,
   ) {}
 
   async onModuleInit() {
@@ -300,6 +302,9 @@ export class CollaborationExecutionService implements OnModuleInit {
               .map((c) => this.investigation.getCall(actor, c.id)),
           )
         ).flatMap((c) => c.evidence);
+        const revisionTarget = turn.revisionOfProposalId
+          ? await this.patches.get(actor, turn.revisionOfProposalId)
+          : null;
         await this.checkpoint(actor, turn.id, attempt.id, attempt.fence, {
           provider: configured.provider.name.slice(0, 32),
           model: configured.model.slice(0, 128),
@@ -320,9 +325,25 @@ export class CollaborationExecutionService implements OnModuleInit {
               conversationId: turn.conversationId,
               pullRequestId: turn.pullRequestId,
               headSha: turn.headSha,
+              baseSha: turn.baseSha,
               reviewRunId: turn.reviewRunId,
               anchor: turn.conversation.anchor,
               historical: turn.headSha !== turn.conversation.pullRequest.headSha,
+              ...(revisionTarget
+                ? {
+                    previousProposalNotFacts: {
+                      revision: revisionTarget.revision,
+                      summary: revisionTarget.summary,
+                      rationale: revisionTarget.rationale,
+                      limitations: revisionTarget.limitations,
+                      files: revisionTarget.files.map((f) => ({
+                        path: f.path,
+                        oldBlobSha: f.oldBlobSha,
+                        edits: f.edits,
+                      })),
+                    },
+                  }
+                : {}),
             },
           },
           checkpoint: (accounting) =>
@@ -334,6 +355,26 @@ export class CollaborationExecutionService implements OnModuleInit {
               fence: attempt.fence,
             }),
         });
+        const proposed =
+          result.response.action === 'PROPOSE_PATCH'
+            ? await this.patches.prepare(actor, turn.id, result.response.proposal, {
+                requestId: attempt.id,
+                authorType: 'AI',
+                attemptId: attempt.id,
+                signal: abort.signal,
+              })
+            : null;
+        const response =
+          result.response.action === 'PROPOSE_PATCH'
+            ? {
+                content: 'I prepared a proposed change for review.',
+                citations: proposed!.ids.map((evidenceId) => ({
+                  evidenceId,
+                  claim: 'Supporting context for the proposed change',
+                  strength: 'INFERRED' as const,
+                })),
+              }
+            : result.response;
         await this.prisma.$transaction(async (db) => {
           await this.lock(db, actor, turn.id);
           const fresh = await this.scope(db, actor, turn.id);
@@ -353,7 +394,7 @@ export class CollaborationExecutionService implements OnModuleInit {
             abort.signal.aborted
           )
             throw new CollaborationFailure('CANCELLED');
-          const ids = result.response.citations.map((c) => c.evidenceId);
+          const ids = response.citations.map((c) => c.evidenceId);
           const available = new Set(live.availableEvidenceIds as string[]);
           const valid = await db.evidenceReference.count({
             where: {
@@ -366,6 +407,7 @@ export class CollaborationExecutionService implements OnModuleInit {
           });
           if (ids.some((id) => !available.has(id)) || valid !== ids.length)
             throw new CollaborationFailure('INVALID_CITATION');
+          if (proposed) await this.patches.persist(db, actor, proposed, live.provider, live.model);
           // The conversation lock serializes sequence allocation with concurrent human submissions.
           await db.$queryRaw`SELECT id FROM "Conversation" WHERE id=${turn.conversationId} AND "organizationId"=${actor.organizationId} FOR UPDATE`;
           const conversation = await db.conversation.findFirstOrThrow({
@@ -382,8 +424,8 @@ export class CollaborationExecutionService implements OnModuleInit {
               createdById: actor.userId,
               sequence,
               kind: 'ASSISTANT',
-              content: redactSecrets(result.response.content).redacted,
-              citations: result.response.citations.map((c) => ({
+              content: redactSecrets(response.content).redacted,
+              citations: response.citations.map((c) => ({
                 ...c,
                 claim: redactSecrets(c.claim).redacted,
               })) as Prisma.InputJsonValue,
@@ -438,7 +480,13 @@ export class CollaborationExecutionService implements OnModuleInit {
       ]);
     } catch (error) {
       const category =
-        error instanceof CollaborationFailure ? error.category : 'EXECUTION_UNAVAILABLE';
+        error instanceof CollaborationFailure
+          ? error.category
+          : error instanceof ValidationError
+            ? 'PATCH_INVALID'
+            : error instanceof ConflictError
+              ? 'PATCH_CONFLICT'
+              : 'EXECUTION_UNAVAILABLE';
       await this.prisma.$transaction(async (db) => {
         await this.lock(db, actor, turn.id);
         const changed = await db.collaborationAttempt.updateMany({

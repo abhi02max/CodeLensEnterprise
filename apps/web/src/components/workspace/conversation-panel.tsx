@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { shortSha } from '@/lib/format';
 import { EvidenceViewer } from './evidence-viewer';
+import { PatchProposals } from './patch-proposal-card';
 import type { ReviewSession } from '@/lib/types';
 
 export function ConversationPanel({
@@ -348,6 +349,7 @@ export function ConversationPanel({
               </Button>
             </div>
           </form>
+          <PatchProposals key={selectedId} conversationId={selectedId} />
         </div>
       )}
     </section>

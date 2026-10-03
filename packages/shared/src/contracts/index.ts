@@ -10,5 +10,6 @@ export * from './collaboration';
 export * from './conversation';
 export * from './investigation';
 export * from './collaborator';
+export * from './patch-proposal';
 export * from './audit';
 export * from './tool';

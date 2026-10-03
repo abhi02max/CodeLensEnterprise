@@ -267,7 +267,10 @@ describe('bounded evidence-grounded collaborator', () => {
       );
       expect(context.messages[0]!.content).not.toContain(text);
       expect(JSON.parse(context.messages[1]!.content)).toMatchObject({ trust: 'UNTRUSTED_DATA' });
-      expect(context.messages[0]!.content).toContain('No patch, shell, writes');
+      expect(context.messages[0]!.content).toContain(
+        'Proposals are data for human review, never applied',
+      );
+      expect(context.messages[0]!.content).toContain('No shell, writes, GitHub mutation');
     },
   );
   it.each(['shell', 'search_symbols', 'post_comment', 'PROPOSE_PATCH'])(

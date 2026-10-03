@@ -354,6 +354,10 @@ export const AuditAction = {
   API_KEY_CREATED: 'api_key.created',
   API_KEY_REVOKED: 'api_key.revoked',
   TOOL_EXECUTED: 'tool.executed',
+  PATCH_PROPOSED: 'collaboration.patch.proposed',
+  PATCH_ACCEPTED: 'collaboration.patch.accepted',
+  PATCH_REJECTED: 'collaboration.patch.rejected',
+  PATCH_SUPERSEDED: 'collaboration.patch.superseded',
 } as const;
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 

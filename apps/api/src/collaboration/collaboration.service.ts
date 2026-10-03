@@ -190,9 +190,13 @@ export class CollaborationService implements OnModuleInit {
     actor: ConversationActor,
     id: string,
     raw: CreateConversationMessageInput,
+    revisionOfProposalId?: string,
   ): Promise<CreateConversationMessageResponse> {
     const input = CreateConversationMessageSchema.parse(raw);
-    const hash = digest({ content: input.content });
+    const hash = digest({
+      content: input.content,
+      ...(revisionOfProposalId ? { revisionOfProposalId } : {}),
+    });
     const conversation = await this.requireConversation(this.prisma.unscoped, actor, id);
     const existing = await this.replay(this.prisma.unscoped, actor, id, input.requestId, hash);
     if (existing) return { message: existing, aiExecutionAvailable: false };
@@ -222,6 +226,17 @@ export class CollaborationService implements OnModuleInit {
       const replay = await this.replay(db, actor, id, input.requestId, hash);
       if (replay) return { message: replay, aiExecutionAvailable: false };
       const freshPr = await this.requirePr(db, actor, pr.id);
+      if (revisionOfProposalId) {
+        const proposal = await db.patchProposal.findFirst({
+          where: {
+            id: revisionOfProposalId,
+            organizationId: actor.organizationId,
+            conversationId: id,
+            pullRequestId: pr.id,
+          },
+        });
+        if (!proposal) throw new NotFoundError('Patch proposal');
+      }
       if (freshPr.headSha !== headSha)
         throw new ConflictError(
           'The PR changed. Sync the pull request before sending this message.',
@@ -240,6 +255,7 @@ export class CollaborationService implements OnModuleInit {
           initiatedById: actor.userId,
           headSha,
           baseSha,
+          ...(revisionOfProposalId ? { revisionOfProposalId } : {}),
           reviewRunId: run?.id ?? null,
           sequence,
           requestId: input.requestId,
