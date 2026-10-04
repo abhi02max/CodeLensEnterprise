@@ -1173,6 +1173,33 @@ PROPOSE_PATCH remains NOT VERIFIED. Known walkthrough risk drift, expected
 sign-in diagnostics, clipping observations and existing formatting/Ruff debt
 remain disclosed.
 
+## Phase 3F Deterministic Static Re-analysis
+
+The subsequent static slice attaches immutable, source-free ORIGINAL/PATCHED
+observations to the same exact reconstructed inputs used by paired validation.
+See [static validation audit, architecture and evidence](static-validation.md).
+Earlier statements that static re-analysis was not implemented describe the
+paired-validation checkpoint, not this later slice. ML reassessment, candidate
+RAG indexing and AI re-review remain NOT IMPLEMENTED in this slice.
+
+The scoped new project `codelens_phase3f_static_20261004` proves upgrade from the
+eight-migration certified HEAD, prior-table fingerprint preservation, fresh nine-
+migration initialization, real queued paired/static persistence, all five
+occurrence comparison classes, line movement, safe readback, tenant denial,
+immutable rows, metadata-only audits and restart persistence. Missing/incomplete
+analysis is not displayed as a clean result. Pure pattern/secret logic is reused;
+external ESLint/Semgrep/npm audit and the historical AnalysisSandbox are excluded.
+
+Deterministic local verification is PASSED, subject to the disclosed limits in
+the linked report. Full workspace result is 691 passes with seven Windows-specific
+skips; Linux executor/broker checks cover those platform cases. Browser evidence
+is scoped, not accessibility certification. Static coverage is limited; resolved
+does not mean vulnerability fixed and introduced does not prove exploitation.
+No provider call or GitHub mutation occurred. All eight prior migrations and lock
+remain byte-identical. Exact-SHA hosted CI for this uncommitted slice is UNVERIFIED.
+Phase 3C real-provider limitations and known risk drift/diagnostic/formatting/Ruff
+debt remain unchanged. No hostile multi-tenant or exactly-once claim is added.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.

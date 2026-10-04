@@ -6,7 +6,7 @@ import {
   type AnalyzerResult,
   type StaticFinding,
 } from '@codelens/shared';
-import { fingerprintFinding } from '../sandbox';
+import { fingerprintFinding } from '../fingerprint';
 import type { AnalyzerFile, AnalyzerInput } from '../types';
 
 /**
@@ -171,6 +171,12 @@ const RULES: readonly PatternRule[] = [
 
 /** Lines of surrounding context used to evaluate multi-line confirmations. */
 const WINDOW_LINES = 4;
+
+export const PATTERN_RULE_IDENTITY = RULES.map((rule) => ({
+  id: rule.id, severity: rule.severity, category: rule.category, message: rule.message,
+  pattern: rule.pattern.source, flags: rule.pattern.flags, languages: rule.languages,
+  confirm: rule.confirm?.toString() ?? null,
+}));
 
 /**
  * New-file line number for a line of reconstructed content.

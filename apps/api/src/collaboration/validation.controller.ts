@@ -5,6 +5,7 @@ import {
   ValidationCancelSchema,
   ListConversationsSchema,
   Role,
+  StaticFindingsQuerySchema,
 } from '@codelens/shared';
 import {
   CurrentUser,
@@ -63,6 +64,21 @@ export class ValidationController {
       items: (await this.validation.get({ organizationId, userId: user.userId, traceId }, id))
         .steps,
     };
+  }
+  @Get('validations/:id/static-findings')
+  staticFindings(
+    @OrgId() organizationId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @TraceId() traceId: string,
+    @Param('id') id: string,
+    @Query(zodQuery(StaticFindingsQuerySchema))
+    query: ReturnType<typeof StaticFindingsQuerySchema.parse>,
+  ) {
+    return this.validation.staticFindings(
+      { organizationId, userId: user.userId, traceId },
+      id,
+      query,
+    );
   }
   @Post('validations/:id/cancel')
   @HttpCode(200)

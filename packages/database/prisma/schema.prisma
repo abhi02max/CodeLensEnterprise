@@ -1343,6 +1343,7 @@ model ValidationRun {
   completedAt DateTime?
   application PatchApplication @relation(fields: [applicationId, organizationId], references: [id, organizationId], onDelete: Restrict)
   attempts ValidationAttempt[]
+  staticAnalyses ValidationStaticAnalysis[]
   @@unique([id, organizationId])
   @@unique([organizationId, requestedById, requestId])
   @@index([organizationId, applicationId, id])
@@ -1384,6 +1385,54 @@ model ValidationStep {
   attempt ValidationAttempt @relation(fields: [attemptId, validationId, organizationId], references: [id, validationId, organizationId], onDelete: Restrict)
   @@unique([attemptId, profile, side])
   @@index([organizationId, validationId])
+}
+
+model ValidationStaticAnalysis {
+  id String @id @default(uuid()) @db.Uuid
+  validationId String
+  organizationId String
+  attemptId String
+  side String @db.VarChar(8)
+  status String @db.VarChar(16)
+  reason String? @db.VarChar(64)
+  rulesetVersion String @db.VarChar(80)
+  rulesetDigest String @db.VarChar(64)
+  configurationDigest String @db.VarChar(64)
+  fingerprintVersion String @db.VarChar(80)
+  sourceDigest String @db.VarChar(64)
+  inputDigest String @db.VarChar(64)
+  resultDigest String @db.VarChar(64)
+  findingCount Int
+  durationMs Int
+  createdAt DateTime @default(now())
+  run ValidationRun @relation(fields: [validationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  findings ValidationFinding[]
+  @@unique([id, organizationId])
+  @@unique([validationId, side])
+}
+
+model ValidationFinding {
+  id String @id @default(uuid()) @db.Uuid
+  analysisId String @db.Uuid
+  organizationId String
+  analyzer String @db.VarChar(40)
+  ruleId String @db.VarChar(120)
+  severity String @db.VarChar(16)
+  category String @db.VarChar(40)
+  path String @db.VarChar(512)
+  startLine Int
+  endLine Int
+  message String @db.VarChar(700)
+  occurrenceFingerprint String @db.VarChar(64)
+  relevantDigest String @db.VarChar(64)
+  findingDigest String @db.VarChar(64)
+  classification String @db.VarChar(16)
+  comparability String @db.VarChar(64)
+  counterpartDigest String? @db.VarChar(64)
+  diffRelation String @db.VarChar(16)
+  analysis ValidationStaticAnalysis @relation(fields: [analysisId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  @@unique([analysisId, findingDigest])
+  @@index([organizationId, analysisId, id])
 }
 
 enum ReviewVerdict {

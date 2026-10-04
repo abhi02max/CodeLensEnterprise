@@ -13,5 +13,6 @@ export * from './collaborator';
 export * from './patch-proposal';
 export * from './patch-application';
 export * from './validation';
+export * from './validation-static';
 export * from './audit';
 export * from './tool';

@@ -8,7 +8,7 @@ import {
   type SecretHit,
   type StaticFinding,
 } from '@codelens/shared';
-import { fingerprintFinding } from '../sandbox';
+import { fingerprintFinding } from '../fingerprint';
 import type { AnalyzerFile, AnalyzerInput } from '../types';
 
 /**

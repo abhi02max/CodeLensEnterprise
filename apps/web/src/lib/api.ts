@@ -18,6 +18,8 @@ import type {
   PatchApplicationRequest,
   ValidationView,
   ValidationRequest,
+  ValidationStaticView,
+  StaticFindingsQuery,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -51,6 +53,14 @@ export const api = {
       `/patch-applications/${encodeURIComponent(applicationId)}/validations${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
     ),
   validation: (id: string) => apiRequest<ValidationView>(`/validations/${encodeURIComponent(id)}`),
+  validationStatic: (id: string, query: Partial<StaticFindingsQuery> = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query))
+      if (value !== undefined) params.set(key, String(value));
+    return apiRequest<ValidationStaticView>(
+      `/validations/${encodeURIComponent(id)}/static-findings?${params}`,
+    );
+  },
   requestValidation: (id: string, input: ValidationRequest) =>
     apiRequest<ValidationView>(`/patch-applications/${encodeURIComponent(id)}/validations`, {
       method: 'POST',

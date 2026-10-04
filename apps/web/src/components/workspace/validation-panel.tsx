@@ -7,6 +7,7 @@ import type { PatchApplicationView } from '@codelens/shared';
 import { Alert, Button } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
+import { ValidationStaticPanel } from './validation-static-panel';
 
 const comparisons: Record<string, string> = {
   BOTH_PASS: 'Original and patched candidate passed the check.',
@@ -134,6 +135,10 @@ export function ValidationPanel({ application }: { application: PatchApplication
                 ))}
               </details>
             ))}
+            <ValidationStaticPanel
+              validationId={v.id}
+              active={['QUEUED', 'PREPARING', 'RUNNING'].includes(v.state)}
+            />
             <details className="mt-1 text-xs">
               <summary>Validation identities and limitations</summary>
               <p className="break-all">

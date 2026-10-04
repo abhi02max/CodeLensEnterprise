@@ -9,21 +9,37 @@ import {
 import { snapshotDigest } from '@codelens/github/dist/exact-git-snapshot';
 import { validateInput } from '@codelens/validation-executor';
 import { ValidationService } from './validation.service';
+import {
+  analyzeStaticSource,
+  compareStaticOccurrences,
+} from '@codelens/static-analysis/dist/validation-static';
 import { reconstructApplication } from './patch-application-content';
 
 const broker = vi.hoisted(() => ({ request: vi.fn() }));
+const staticRunner = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock('@codelens/static-analysis/dist/validation-static-runner', () => ({
+  runValidationStatic: staticRunner.run,
+}));
 vi.mock('@codelens/validation-broker/dist/client', () => ({ requestValidation: broker.request }));
 vi.mock('node:fs/promises', () => ({ readFile: vi.fn(async () => Buffer.alloc(32, 7)) }));
 const actor = { organizationId: 'org', userId: 'user' };
 afterEach(() => {
   vi.unstubAllEnvs();
   broker.request.mockReset();
+  staticRunner.run.mockReset();
 });
-function fixture() {
+function fixture(suffix = '') {
+  staticRunner.run.mockImplementation(async (sources, edits) =>
+    compareStaticOccurrences(
+      analyzeStaticSource(sources.ORIGINAL, 'ORIGINAL', edits),
+      analyzeStaticSource(sources.PATCHED, 'PATCHED', edits),
+      edits,
+    ),
+  );
   vi.stubEnv('CODELENS_VALIDATION_IMAGE', 'sha256:' + 'a'.repeat(64));
   vi.stubEnv('CODELENS_VALIDATION_BUNDLE_DIGEST', 'b'.repeat(64));
   vi.stubEnv('CODELENS_VALIDATION_CONFIGURATION_DIGEST', 'c'.repeat(64));
-  const content = 'export const a = 1;\n',
+  const content = 'export const a = 1;\n' + suffix,
     head = 'a'.repeat(40),
     base = 'b'.repeat(40);
   const blob = (s: string) =>
@@ -131,6 +147,8 @@ function fixture() {
   };
   const runs: any[] = [],
     audit: any[] = [];
+  const staticAnalyses: any[] = [],
+    staticFindings: any[] = [];
   let role: string | null = 'DEVELOPER';
   const matches = (r: any, w: any) =>
     Object.entries(w).every(([k, v]: any) =>
@@ -141,7 +159,7 @@ function fixture() {
             ? v.in.includes(r[k])
             : 'gt' in v
               ? r[k] > v.gt
-              : true
+              : r[k] && matches(r[k], v)
           : r[k] === v,
     );
   const db = {
@@ -207,6 +225,32 @@ function fixture() {
           .steps.push(data);
         return data;
       }),
+    },
+    validationStaticAnalysis: {
+      create: vi.fn(async ({ data }: any) => {
+        staticAnalyses.push(data);
+        return data;
+      }),
+      findMany: vi.fn(async ({ where }: any) => staticAnalyses.filter((r) => matches(r, where))),
+    },
+    validationFinding: {
+      createMany: vi.fn(async ({ data }: any) => {
+        staticFindings.push(...data);
+        return { count: data.length };
+      }),
+      findFirst: vi.fn(
+        async ({ where }: any) =>
+          staticFindings.find((f) =>
+            matches({ ...f, analysis: staticAnalyses.find((a) => a.id === f.analysisId) }, where),
+          ) ?? null,
+      ),
+      findMany: vi.fn(async ({ where, take }: any) =>
+        staticFindings
+          .filter((f) =>
+            matches({ ...f, analysis: staticAnalyses.find((a) => a.id === f.analysisId) }, where),
+          )
+          .slice(0, take),
+      ),
     },
     auditLog: {
       create: vi.fn(async ({ data }: any) => {
@@ -304,6 +348,8 @@ function fixture() {
     snapshot,
     runs,
     audit,
+    staticAnalyses,
+    staticFindings,
     db,
     queue,
     create,
@@ -371,6 +417,86 @@ it('uses independent exact pinned HEAD snapshots and consumes no retained worksp
   for (const call of f.snapshotRead.mock.calls as any[]) expect(call[1]).toBe(f.app.headSha);
   expect(result.steps.every((s) => s.runnerReported.trusted === false)).toBe(true);
   expect(result.steps[0]!.inputDigest).not.toBe(result.steps[1]!.inputDigest);
+});
+it('persists complete static observations once and returns bounded scoped filtered readback', async () => {
+  const f = fixture('eval(first);\neval(second);\n');
+  const r = await f.create();
+  await f.service.execute(f.job());
+  const view = await f.service.staticFindings(actor, r.id, { limit: 1 });
+  expect(view.analyses).toHaveLength(2);
+  expect(view.summary.UNCHANGED).toBe(2);
+  expect(view.items).toHaveLength(1);
+  expect(view.nextAfterId).not.toBeNull();
+  const next = await f.service.staticFindings(actor, r.id, {
+    limit: 1,
+    afterId: view.nextAfterId!,
+  });
+  expect(next.items[0]?.id).not.toBe(view.items[0]?.id);
+  expect(
+    (
+      await f.service.staticFindings(actor, r.id, {
+        limit: 25,
+        side: 'PATCHED',
+        classification: 'UNCHANGED',
+      })
+    ).items,
+  ).toHaveLength(2);
+  await expect(
+    f.service.staticFindings({ ...actor, organizationId: 'foreign' }, r.id, { limit: 25 }),
+  ).rejects.toThrow();
+  await expect(
+    f.service.staticFindings(actor, r.id, { limit: 25, afterId: randomUUID() }),
+  ).rejects.toThrow();
+  await f.service.execute(f.job());
+  expect(f.staticAnalyses).toHaveLength(2);
+  expect(f.staticFindings).toHaveLength(4);
+  expect(f.p.status).toBe('ACCEPTED');
+  expect(f.app.status).toBe('APPLIED');
+});
+it('static analyzer failure remains explicit without altering paired profile outcome', async () => {
+  const f = fixture('eval(input);\n');
+  const r = await f.create();
+  staticRunner.run.mockImplementation(async (sources, edits) => {
+    const a = analyzeStaticSource(sources.ORIGINAL, 'ORIGINAL', edits),
+      b = analyzeStaticSource(sources.PATCHED, 'PATCHED', edits);
+    b.status = 'TIMED_OUT';
+    b.reason = 'ANALYZER_TIME_BOUND';
+    b.findings = [];
+    return compareStaticOccurrences(a, b, edits);
+  });
+  await f.service.execute(f.job());
+  const view = await f.service.staticFindings(actor, r.id, { limit: 25 });
+  expect(view.analyses.some((a) => a.status === 'TIMED_OUT')).toBe(true);
+  expect(view.summary.INCOMPARABLE).toBe(1);
+  expect(view.summary.RESOLVED).toBe(0);
+  expect((await f.service.get(actor, r.id)).outcome).toBe('BOTH_PASS');
+});
+it('malformed static output is persisted as failure without logging the payload', async () => {
+  const f = fixture();
+  const r = await f.create();
+  staticRunner.run.mockResolvedValue({ source: 'must-not-leak' });
+  await f.service.execute(f.job());
+  const view = await f.service.staticFindings(actor, r.id, { limit: 25 });
+  expect(view.analyses.every((a) => a.status === 'FAILED' && a.reason === 'RESULT_REJECTED')).toBe(
+    true,
+  );
+  expect(JSON.stringify(f.audit)).not.toContain('must-not-leak');
+  expect(JSON.stringify(view)).not.toContain('must-not-leak');
+});
+it('cancellation during static execution fences all late static writes', async () => {
+  const f = fixture();
+  const r = await f.create();
+  staticRunner.run.mockImplementation(async (sources, edits) => {
+    await f.service.cancel(actor, r.id, randomUUID());
+    return compareStaticOccurrences(
+      analyzeStaticSource(sources.ORIGINAL, 'ORIGINAL', edits),
+      analyzeStaticSource(sources.PATCHED, 'PATCHED', edits),
+      edits,
+    );
+  });
+  await f.service.execute(f.job());
+  expect(f.staticAnalyses).toHaveLength(0);
+  expect((await f.service.get(actor, r.id)).state).toBe('CANCELLED');
 });
 it('duplicate worker delivery never launches twice', async () => {
   const f = fixture();

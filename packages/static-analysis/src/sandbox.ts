@@ -234,24 +234,4 @@ function resolveExecutable(command: string): string {
   return command;
 }
 
-/** Stable fingerprint for deduplicating a finding across runs. */
-export function fingerprintFinding(params: {
-  analyzer: string;
-  ruleId: string;
-  path: string | null;
-  message: string;
-}): string {
-  // The message is normalized so variable numbers (line counts, sizes) do not
-  // produce a different fingerprint for what is the same finding.
-  const normalizedMessage = params.message
-    .toLowerCase()
-    .replace(/\d+/g, 'N')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 200);
-
-  return createHash('sha256')
-    .update(`${params.analyzer}|${params.ruleId}|${params.path ?? ''}|${normalizedMessage}`)
-    .digest('hex')
-    .slice(0, 32);
-}
+export { fingerprintFinding } from './fingerprint';

@@ -6,6 +6,13 @@ import { patchHash } from '@codelens/patch-core';
 import { requestValidation } from '@codelens/validation-broker/dist/client';
 import { approvedProfile } from '@codelens/validation-broker/dist/profile';
 import { sanitizeOutput } from '@codelens/validation-broker/dist/output';
+import { runValidationStatic } from '@codelens/static-analysis/dist/validation-static-runner';
+import {
+  STATIC_IDENTITY,
+  STATIC_BOUNDS,
+  staticInputDigest,
+  type StaticResult,
+} from '@codelens/static-analysis/dist/validation-static';
 import {
   Role,
   roleAtLeast,
@@ -17,6 +24,10 @@ import {
   type ValidationRequest,
   type ValidationView,
   type ValidationStepView,
+  type StaticFindingsQuery,
+  type ValidationStaticView,
+  type ValidationFindingView,
+  STATIC_LIMITATIONS,
 } from '@codelens/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubClientFactory } from '../auth/github-client.factory';
@@ -32,6 +43,7 @@ import {
   compareSteps,
   aggregateComparisons,
 } from './validation-content';
+import { verifyStaticResults } from './validation-static-content';
 
 const ACTIVE = ['QUEUED', 'PREPARING', 'RUNNING'];
 const INCLUDE = {
@@ -57,8 +69,10 @@ export class ValidationService implements OnModuleInit {
       SELECT to_regclass('public."ValidationRun"') IS NOT NULL
         AND to_regclass('public."ValidationAttempt"') IS NOT NULL
         AND to_regclass('public."ValidationStep"') IS NOT NULL
+        AND to_regclass('public."ValidationStaticAnalysis"') IS NOT NULL
+        AND to_regclass('public."ValidationFinding"') IS NOT NULL
         AND (SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgenabled='O'
-          AND tgname IN ('validation_run_guard','validation_attempt_guard','validation_step_guard'))=3 AS ready`;
+          AND tgname IN ('validation_run_guard','validation_attempt_guard','validation_step_guard','validation_static_guard','validation_finding_guard'))=5 AS ready`;
     if (!state?.ready) throw new Error('Validation schema not ready. Run db-init migrations.');
   }
   private deployment() {
@@ -523,6 +537,99 @@ export class ValidationService implements OnModuleInit {
         });
         if (failed) throw new Error('EXECUTION_UNCERTAIN');
       }
+      // Pure source-only analysis follows observed paired execution; no runner report is source authority.
+      await this.prisma.$transaction(async (db) => {
+        const { row: current } = await this.live(db, data, claimed.fence);
+        await this.audit(db, current, 'static_started', undefined, {
+          rulesetVersion: STATIC_IDENTITY.rulesetVersion,
+          rulesetDigest: STATIC_IDENTITY.rulesetDigest,
+          configurationDigest: STATIC_IDENTITY.configurationDigest,
+        });
+      });
+      const staticStarted = Date.now();
+      let staticResults = await runValidationStatic(
+        sources,
+        scope.app.proposal.files.map((f) => ({
+          path: f.path,
+          edits: f.edits as unknown as Array<{
+            startLine: number;
+            endLine: number;
+            replacement: string;
+          }>,
+        })),
+        abort.signal,
+      );
+      try {
+        verifyStaticResults(staticResults, sources);
+      } catch {
+        staticResults = Object.fromEntries(
+          (['ORIGINAL', 'PATCHED'] as const).map((side) => [
+            side,
+            {
+              status: 'FAILED',
+              reason: 'RESULT_REJECTED',
+              identity: STATIC_IDENTITY,
+              inputDigest: staticInputDigest(sources[side]),
+              findings: [],
+            },
+          ]),
+        ) as unknown as Record<'ORIGINAL' | 'PATCHED', StaticResult>;
+      }
+      await this.prisma.$transaction(async (db) => {
+        const { row: current } = await this.live(db, data, claimed.fence);
+        for (const side of ['ORIGINAL', 'PATCHED'] as const) {
+          const result = staticResults[side];
+          const analysisId = randomUUID();
+          await db.validationStaticAnalysis.create({
+            data: {
+              id: analysisId,
+              validationId: row.id,
+              organizationId: row.organizationId,
+              attemptId: data.attemptId,
+              side,
+              status: result.status,
+              reason: result.reason,
+              ...result.identity,
+              sourceDigest: side === 'ORIGINAL' ? row.snapshotDigest : row.candidateDigest,
+              inputDigest: result.inputDigest,
+              resultDigest: patchHash(JSON.stringify(result)),
+              findingCount: result.findings.length,
+              durationMs: Math.min(30000, Date.now() - staticStarted),
+            },
+          });
+          if (result.findings.length)
+            await db.validationFinding.createMany({
+              data: result.findings.map((f) => ({
+                ...f,
+                id: randomUUID(),
+                analysisId,
+                organizationId: row.organizationId,
+              })),
+            });
+          await this.audit(db, current, 'static_side_completed', undefined, {
+            side,
+            status: result.status,
+            reason: result.reason,
+            sourceDigest: side === 'ORIGINAL' ? row.snapshotDigest : row.candidateDigest,
+            rulesetVersion: result.identity.rulesetVersion,
+            findingCount: result.findings.length,
+          });
+        }
+        const counts = staticResults.ORIGINAL.findings.reduce<Record<string, number>>((acc, f) => {
+          acc[f.classification] = (acc[f.classification] ?? 0) + 1;
+          return acc;
+        }, {});
+        for (const f of staticResults.PATCHED.findings)
+          if (!f.counterpartDigest) counts[f.classification] = (counts[f.classification] ?? 0) + 1;
+        await this.audit(db, current, 'static_compared', undefined, {
+          ...counts,
+          status:
+            staticResults.ORIGINAL.status === 'COMPLETE' &&
+            staticResults.PATCHED.status === 'COMPLETE'
+              ? 'COMPLETE'
+              : 'INCOMPARABLE',
+        });
+      });
       await this.prisma.$transaction(async (db) => {
         const { row: current } = await this.live(db, data, claimed.fence);
         const comparisons = this.comparisons(current);
@@ -599,6 +706,125 @@ export class ValidationService implements OnModuleInit {
       row.applicationId,
     );
     return this.view(row, scope.pr.headSha);
+  }
+  async staticFindings(
+    actor: ConversationActor,
+    id: string,
+    query: StaticFindingsQuery,
+  ): Promise<ValidationStaticView> {
+    await this.get(actor, id);
+    const analyses = await this.prisma.unscoped.validationStaticAnalysis.findMany({
+      where: { validationId: id, organizationId: actor.organizationId },
+      orderBy: { side: 'asc' },
+    });
+    const relation = { validationId: id, organizationId: actor.organizationId };
+    if (
+      query.afterId &&
+      !(await this.prisma.unscoped.validationFinding.findFirst({
+        where: { id: query.afterId, organizationId: actor.organizationId, analysis: relation },
+      }))
+    )
+      throw new NotFoundError('Validation finding');
+    const all = await this.prisma.unscoped.validationFinding.findMany({
+      where: { organizationId: actor.organizationId, analysis: relation },
+      take: STATIC_BOUNDS.findings * 2,
+    });
+    const summary: ValidationStaticView['summary'] = {
+      UNCHANGED: 0,
+      RESOLVED: 0,
+      INTRODUCED: 0,
+      CHANGED: 0,
+      INCOMPARABLE: 0,
+    };
+    const sideById = new Map(analyses.map((a) => [a.id, a.side]));
+    for (const f of all)
+      if (sideById.get(f.analysisId) === 'ORIGINAL' || !f.counterpartDigest)
+        summary[f.classification as keyof typeof summary]++;
+    const rows = await this.prisma.unscoped.validationFinding.findMany({
+      where: {
+        organizationId: actor.organizationId,
+        analysis: { ...relation, ...(query.side ? { side: query.side } : {}) },
+        ...(query.afterId ? { id: { gt: query.afterId } } : {}),
+        ...(query.rule ? { ruleId: query.rule } : {}),
+        ...(query.severity ? { severity: query.severity } : {}),
+        ...(query.classification ? { classification: query.classification } : {}),
+      },
+      orderBy: { id: 'asc' },
+      take: query.limit + 1,
+    });
+    return {
+      analyses: analyses.map(
+        ({
+          side,
+          status,
+          reason,
+          rulesetVersion,
+          rulesetDigest,
+          configurationDigest,
+          fingerprintVersion,
+          sourceDigest,
+          inputDigest,
+          resultDigest,
+          findingCount,
+          durationMs,
+        }) => ({
+          side: side as 'ORIGINAL' | 'PATCHED',
+          status: status as StaticResult['status'],
+          reason,
+          rulesetVersion,
+          rulesetDigest,
+          configurationDigest,
+          fingerprintVersion,
+          sourceDigest,
+          inputDigest,
+          resultDigest,
+          findingCount,
+          durationMs,
+        }),
+      ),
+      summary,
+      items: rows
+        .slice(0, query.limit)
+        .map(
+          ({
+            id,
+            analysisId,
+            analyzer,
+            ruleId,
+            severity,
+            category,
+            path,
+            startLine,
+            endLine,
+            message,
+            occurrenceFingerprint,
+            findingDigest,
+            classification,
+            comparability,
+            counterpartDigest,
+            diffRelation,
+          }) => ({
+            id,
+            side: sideById.get(analysisId) as 'ORIGINAL' | 'PATCHED',
+            analyzer,
+            ruleId,
+            severity,
+            category,
+            path,
+            startLine,
+            endLine,
+            message,
+            occurrenceFingerprint,
+            findingDigest,
+            classification: classification as ValidationFindingView['classification'],
+            comparability,
+            counterpartDigest,
+            diffRelation: diffRelation as ValidationFindingView['diffRelation'],
+          }),
+        ),
+      nextAfterId: rows.length > query.limit ? rows[query.limit - 1]!.id : null,
+      limitations: STATIC_LIMITATIONS,
+    };
   }
   async list(actor: ConversationActor, id: string, query: { afterId?: string; limit: number }) {
     await this.member(this.prisma.unscoped, actor);
