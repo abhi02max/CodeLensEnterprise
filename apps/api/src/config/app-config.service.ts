@@ -54,6 +54,13 @@ export class AppConfigService {
   get executorImage(): string {
     return this.get('CODELENS_EXECUTOR_IMAGE_ID');
   }
+  get validationDeployment() {
+    return {
+      image: this.get('CODELENS_VALIDATION_IMAGE'),
+      bundleDigest: this.get('CODELENS_VALIDATION_BUNDLE_DIGEST'),
+      configurationDigest: this.get('CODELENS_VALIDATION_CONFIGURATION_DIGEST'),
+    };
+  }
 
   // ---------------------------------------------------------------- auth
   get jwtSecret(): string {

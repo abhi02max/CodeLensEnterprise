@@ -54,6 +54,9 @@ export const TENANT_SCOPED_MODELS = [
   'PatchApplication',
   'PatchApplicationAttempt',
   'PatchApplicationFileResult',
+  'ValidationRun',
+  'ValidationAttempt',
+  'ValidationStep',
 ] as const;
 
 const TENANT_MODEL_SET: ReadonlySet<string> = new Set(TENANT_SCOPED_MODELS);

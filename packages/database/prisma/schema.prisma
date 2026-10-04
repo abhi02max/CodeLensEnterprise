@@ -1267,6 +1267,7 @@ model PatchApplication {
   completedAt DateTime?
   proposal PatchProposal @relation(fields: [proposalId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
   attempts PatchApplicationAttempt[]
+  validations ValidationRun[]
   @@unique([id, organizationId])
   @@unique([organizationId, requestedById, requestId])
   @@index([organizationId, proposalId, id])
@@ -1309,6 +1310,80 @@ model PatchApplicationFileResult {
   byteLength Int
   attempt PatchApplicationAttempt @relation(fields: [attemptId, applicationId, organizationId], references: [id, applicationId, organizationId], onDelete: Restrict)
   @@unique([attemptId, path])
+}
+
+model ValidationRun {
+  id String @id @default(cuid())
+  organizationId String
+  applicationId String
+  proposalId String
+  repositoryId String
+  pullRequestId String
+  conversationId String
+  turnId String
+  requestedById String
+  requestId String @db.Uuid
+  requestHash String @db.VarChar(64)
+  proposalRevision Int
+  proposalDigest String @db.VarChar(64)
+  headSha String @db.VarChar(40)
+  snapshotDigest String @db.VarChar(64)
+  candidateDigest String @db.VarChar(64)
+  image String @db.VarChar(71)
+  bundleDigest String @db.VarChar(64)
+  configurationDigest String @db.VarChar(64)
+  profiles String[]
+  state String @default("QUEUED") @db.VarChar(16)
+  outcome String? @db.VarChar(32)
+  cleanup String @default("NOT_STARTED") @db.VarChar(16)
+  failureCategory String? @db.VarChar(64)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  deadlineAt DateTime
+  completedAt DateTime?
+  application PatchApplication @relation(fields: [applicationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  attempts ValidationAttempt[]
+  @@unique([id, organizationId])
+  @@unique([organizationId, requestedById, requestId])
+  @@index([organizationId, applicationId, id])
+  @@index([state, deadlineAt])
+}
+
+model ValidationAttempt {
+  id String @id @default(cuid())
+  validationId String
+  organizationId String
+  generation Int @default(1)
+  jobId String @unique @db.VarChar(200)
+  fence String? @db.Uuid
+  startedAt DateTime?
+  completedAt DateTime?
+  run ValidationRun @relation(fields: [validationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  steps ValidationStep[]
+  @@unique([validationId, generation])
+  @@unique([id, validationId, organizationId])
+}
+
+model ValidationStep {
+  id String @id @default(cuid())
+  validationId String
+  attemptId String
+  organizationId String
+  profile String @db.VarChar(40)
+  profileVersion Int @default(1)
+  side String @db.VarChar(8)
+  inputDigest String @db.VarChar(64)
+  resultDigest String @db.VarChar(64)
+  brokerNonce String @unique @db.Uuid
+  status String @db.VarChar(32)
+  outcome String @db.VarChar(16)
+  observed Json
+  runnerReported Json
+  startedAt DateTime
+  completedAt DateTime
+  attempt ValidationAttempt @relation(fields: [attemptId, validationId, organizationId], references: [id, validationId, organizationId], onDelete: Restrict)
+  @@unique([attemptId, profile, side])
+  @@index([organizationId, validationId])
 }
 
 enum ReviewVerdict {

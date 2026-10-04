@@ -1124,6 +1124,55 @@ No provider request or GitHub mutation occurred. **Applied-code validation / Pha
 Gemini investigation/tool/evidence PARTIALLY VERIFIED; final response/citations and
 multi-turn NOT VERIFIED. Phase 3D real-provider PROPOSE_PATCH remains NOT VERIFIED.
 
+## Phase 3F Paired Validation Product Slice
+
+This slice adds ValidationRun/Attempt/Step, identifier-only BullMQ delivery,
+independent exact pinned-HEAD original/patched reconstruction, authenticated
+fixed-profile broker execution, bounded persisted comparisons and workspace UI.
+See [paired-validation evidence and operational limits](paired-validation.md).
+The preceding Phase 3E "NOT IMPLEMENTED" statement describes that checkpoint,
+not this later slice. Static/ML/RAG/AI re-review remains NOT IMPLEMENTED here.
+
+Deterministic checks cover 40 validation API/domain/queue tests, four authenticated
+client-channel tests and an additive migration invariant test. Full workspace
+regression has 743 passes and seven platform-specific skips. Prisma validation/
+generation, sequential typechecking, production package/API/web builds and
+isolated Docker builds pass. No unrelated formatting or Ruff debt was repaired.
+
+Scoped local runtime proof uses new project
+`codelens_phase3f_validation_20261004` (web 53406, API 55406). Upgrade starts from
+the exact seven-migration certified foundation and preserves prior-table
+fingerprints; fresh initialization applies all eight migrations without data.
+Real API → Redis/BullMQ → worker → authenticated broker runs prove typecheck and
+unit PASS/PASS, PASS/FAIL, FAIL/PASS and FAIL/FAIL, truthful UNSUPPORTED/no-launch,
+persisted input/result identities, tenant denial, concurrent replay, conflicting
+reuse rejection, bounded sanitized readback, immutable observations and safe
+audit metadata. Independent executors retain non-root, no-network, read-only
+source, fixed image/resources and no credentials. API/workers have no Docker
+socket. Browser proof covers comparisons, trust labels, historical staleness,
+reload, narrow viewport, keyboard focus and cleanup-uncertain launch blocking.
+
+Active cancellation preserves completed observations and fences late success.
+Operator inspection confirms owned-resource disposal, but the disconnected
+protocol cannot provide an authenticated cleanup receipt: product state remains
+UNCERTAIN and blocks reexecution. There is no automatic override or retry.
+Restart persistence is checked; worker-crash/deadline reconciliation is tested
+deterministically, not universal host-SIGKILL/crash recovery. One final simultaneous
+Redis/worker restart reached the existing 180-second drain fallback
+(`drained=false cleaned=false`); readback survived, but graceful draining through
+dependency loss is not claimed. Broker foundation
+security claims remain scoped local Docker proof, not hostile multi-tenant
+production certification. Passing observations do not establish patch safety,
+test trust, causality, exactly-once processing or semantic correctness.
+
+No real provider request, GitHub mutation or static/ML/RAG/AI rerun occurred.
+All seven earlier migrations and migration lock remain byte-identical. Phase 3C
+real Gemini investigation/tool/evidence remains PARTIALLY VERIFIED; final grounded
+response/citations and multi-turn remain NOT VERIFIED. Phase 3D real-provider
+PROPOSE_PATCH remains NOT VERIFIED. Known walkthrough risk drift, expected
+sign-in diagnostics, clipping observations and existing formatting/Ruff debt
+remain disclosed.
+
 ## Completion Estimate
 
 Approximately 90% portfolio complete is a judgement, not a coverage calculation.

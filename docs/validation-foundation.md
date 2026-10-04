@@ -1,8 +1,10 @@
 # Phase 3F Validation Security Foundation
 
-This checkpoint is an execution boundary, not the validation product. There is
-no ValidationRun database model, migration, API, queue, frontend, static rerun,
-ML reassessment, RAG or AI re-review. Phase 3E remains a separate, non-executing
+This foundation checkpoint is an execution boundary, not the validation product.
+It did not include a ValidationRun model, migration, API, queue or frontend.
+The subsequent [paired-validation product slice](paired-validation.md) is separate;
+static reruns, ML reassessment, RAG and AI re-review remain excluded.
+Phase 3E remains a separate, non-executing
 materializer. Passing validation is not a safety guarantee.
 
 ## Supported scope

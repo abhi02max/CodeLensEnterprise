@@ -15,6 +15,8 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@codelens/validation-broker": "workspace:*",
+    "@codelens/validation-executor": "workspace:*",
     "@codelens/sandbox-broker": "workspace:*",
     "@codelens/patch-core": "workspace:*",
     "@codelens/ai-agent": "workspace:*",

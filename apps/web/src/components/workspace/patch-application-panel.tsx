@@ -7,6 +7,7 @@ import type { PatchProposalView } from '@codelens/shared';
 import { Alert, Button } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
+import { ValidationPanel } from './validation-panel';
 
 const labels: Record<string, string> = {
   QUEUED: 'Queued',
@@ -92,6 +93,9 @@ export function PatchApplicationPanel({ proposal }: { proposal: PatchProposalVie
               </p>
             )}
             {a.status === 'APPLIED' && <p className="mt-1 text-xs">{a.limitations}</p>}
+            {a.status === 'APPLIED' && a.cleanup === 'DISPOSED' && (
+              <ValidationPanel application={a} />
+            )}
             {a.failureCategory && <p className="text-xs">Failure category: {a.failureCategory}</p>}
             {a.attempts.map((attempt) => (
               <details key={attempt.generation} className="mt-1 text-xs">

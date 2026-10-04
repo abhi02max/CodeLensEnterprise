@@ -16,6 +16,8 @@ import type {
   PatchApplicationView,
   PatchApplicationList,
   PatchApplicationRequest,
+  ValidationView,
+  ValidationRequest,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -44,6 +46,21 @@ import type {
  * the totals drive the dashboard counts, and unwrapping them here would mean fetching twice.
  */
 export const api = {
+  validations: (applicationId: string, afterId?: string) =>
+    apiRequest<{ items: ValidationView[]; nextAfterId: string | null }>(
+      `/patch-applications/${encodeURIComponent(applicationId)}/validations${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
+    ),
+  validation: (id: string) => apiRequest<ValidationView>(`/validations/${encodeURIComponent(id)}`),
+  requestValidation: (id: string, input: ValidationRequest) =>
+    apiRequest<ValidationView>(`/patch-applications/${encodeURIComponent(id)}/validations`, {
+      method: 'POST',
+      body: input,
+    }),
+  cancelValidation: (id: string, requestId: string) =>
+    apiRequest<ValidationView>(`/validations/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: { requestId },
+    }),
   // ---------------------------------------------------------------- auth
   async signIn(email: string, password: string): Promise<AuthResponse> {
     const response = await apiRequest<AuthResponse>('/auth/signin', {

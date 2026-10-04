@@ -8,6 +8,7 @@ import { ReviewRunProcessor } from './processors/review-run.processor';
 import { CollaborationModule } from '../collaboration/collaboration.module';
 import { CollaborationProcessor } from './processors/collaboration.processor';
 import { PatchApplicationProcessor } from './processors/patch-application.processor';
+import { ValidationProcessor } from './processors/validation.processor';
 
 /**
  * Consumer half of the queue layer.
@@ -28,6 +29,7 @@ import { PatchApplicationProcessor } from './processors/patch-application.proces
     PrSyncProcessor,
     CollaborationProcessor,
     PatchApplicationProcessor,
+    ValidationProcessor,
   ],
 })
 export class WorkersModule {}
