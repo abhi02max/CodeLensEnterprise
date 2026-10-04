@@ -1,7 +1,12 @@
 import { createServer } from 'node:net';
 import { chmod, lstat, readFile, unlink } from 'node:fs/promises';
 import { readFrame, encodeFrame, MATERIALIZATION_LIMITS } from '@codelens/patch-core';
-import { BrokerAuthenticator, signBrokerResponse, safeBrokerFailure } from './protocol';
+import {
+  BrokerAuthenticator,
+  signBrokerResponse,
+  safeBrokerFailure,
+  BROKER_POLICY_VERSION,
+} from './protocol';
 import { NonceStore } from './nonce-store';
 import { FixedPolicyLauncher } from './launcher';
 import { DockerTransport } from './docker';
@@ -12,6 +17,7 @@ void (async () => {
   const key = await readFile('/run/secrets/broker-key');
   const auth = new BrokerAuthenticator(key);
   const image = process.env['CODELENS_EXECUTOR_IMAGE_ID'] ?? '';
+  const deployment = { executorImage: image, policyVersion: BROKER_POLICY_VERSION } as const;
   const seccomp = await readFile('/policy/seccomp.json', 'utf8');
   const launcher = new FixedPolicyLauncher(
     new DockerTransport(),
@@ -60,14 +66,17 @@ void (async () => {
           ),
         );
         socket.end(
-          encodeFrame(signBrokerResponse(key, nonce, result), MATERIALIZATION_LIMITS.outputBytes),
+          encodeFrame(
+            signBrokerResponse(key, nonce, result, deployment),
+            MATERIALIZATION_LIMITS.outputBytes,
+          ),
         );
       } catch (error) {
         const code = safeBrokerFailure(error);
         if (!socket.destroyed && nonce)
           socket.end(
             encodeFrame(
-              signBrokerResponse(key, nonce, { version: 1, status: 'FAILED', code }),
+              signBrokerResponse(key, nonce, { version: 1, status: 'FAILED', code }, deployment),
               MATERIALIZATION_LIMITS.outputBytes,
             ),
           );

@@ -35,6 +35,9 @@ importers:
       '@codelens/rag-engine':
         specifier: workspace:*
         version: link:../../packages/rag-engine
+      '@codelens/sandbox-broker':
+        specifier: workspace:*
+        version: link:../sandbox-broker
       '@codelens/shared':
         specifier: workspace:*
         version: link:../../packages/shared

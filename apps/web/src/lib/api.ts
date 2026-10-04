@@ -13,6 +13,9 @@ import type {
   PatchProposalView,
   PatchIntent,
   PatchProposalList,
+  PatchApplicationView,
+  PatchApplicationList,
+  PatchApplicationRequest,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -135,6 +138,20 @@ export const api = {
     apiRequest<PatchProposalView>(`/patch-proposals/${encodeURIComponent(id)}/decision`, {
       method: 'POST',
       body: { requestId, decision },
+    }),
+  patchApplications: (id: string, afterId?: string) =>
+    apiRequest<PatchApplicationList>(
+      `/patch-proposals/${encodeURIComponent(id)}/applications${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,
+    ),
+  requestPatchApplication: (id: string, input: PatchApplicationRequest) =>
+    apiRequest<PatchApplicationView>(`/patch-proposals/${encodeURIComponent(id)}/applications`, {
+      method: 'POST',
+      body: input,
+    }),
+  cancelPatchApplication: (id: string, requestId: string) =>
+    apiRequest<PatchApplicationView>(`/patch-applications/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: { requestId },
     }),
   patchRevision: (id: string, requestId: string, proposal: PatchIntent) =>
     apiRequest<PatchProposalView>(`/patch-proposals/${encodeURIComponent(id)}/revisions`, {

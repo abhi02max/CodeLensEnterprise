@@ -1058,7 +1058,8 @@ builds, dedicated image builds and diff checks passed. All six migrations and th
 lock file remain byte-identical; no migration was added. Local secret/proof/
 Compose/runtime artifacts are ignored, not proposed commit content.
 
-**PatchApplication persistence/API/queue/frontend: NOT IMPLEMENTED.**
+**PatchApplication persistence/API/queue/frontend: not implemented at the foundation
+checkpoint; implemented and verified separately below.**
 **Applied-code validation / Phase 3F: NOT IMPLEMENTED.**
 No provider call or GitHub mutation occurred. No real-time cleanup guarantee,
 secure erasure, compromised-kernel resistance, universal secret non-leakage, or
@@ -1067,6 +1068,61 @@ evidence remains PARTIALLY VERIFIED; final response/citations and multi-turn rem
 NOT VERIFIED. Phase 3D real-provider PROPOSE_PATCH remains NOT VERIFIED.
 Existing formatting/Ruff debt, expected signin diagnostics, clipping observations,
 and walkthrough risk drift remain disclosed and untouched.
+
+## Phase 3E Proper: Accepted Proposal Materialization
+
+Deterministic implementation and isolated runtime verification: **PASSED**.
+See [application architecture, exact inventory, evidence and limitations](phase3e-application.md).
+Starting foundation checkpoint: `e97f042240d8c01455e7ee9b457126e3e541a27b`.
+The implementation is uncommitted; hosted CI for the eventual new revision is
+**NOT VERIFIED**.
+
+The new project `codelens_phase3e_application_20261003` proved six-migration
+foundation upgrade with prior-table fingerprints preserved, fresh seven-migration
+initialization without seed, real authenticated API/Redis/BullMQ/worker/broker
+materialization, verified results for 901 exact-snapshot files, signed deployment
+identity, restricted executor policy, disposal, replay/concurrent request fencing,
+preparation/materialization cancellation, tenant denial, stale historical readback,
+waiting-job consumption after worker restart, and unchanged persisted results after
+normal stack restart. No original or previous-phase resources were changed.
+
+APPLIED means reconstruction at the pinned revision, restricted ephemeral
+materialization, verified manifest and confirmed disposal ONLY. It does not mean
+tested, built, validated, fixed, committed, pushed or applied to a repository.
+Application tables and audits contain identities/hashes, not candidate source.
+Only the broker has Docker authority; API and worker do not mount the Docker socket.
+The minimal broker integration change authenticates actual image/policy identity;
+the fixed launch command, mount/network/resource policy and executor are unchanged.
+
+Final workspace regression: **565 tests passed**, including 60 added application/
+queue/attestation/migration tests. Prisma validate/generate, sequential typecheck,
+production package/API/worker/web builds, final API/web/broker/executor image builds
+and diff checks passed. Focused application browser: seven checks passed, including
+keyboard initiation, explicit semantics, stale indication and reload readback.
+Existing walkthrough: 81 passed and two unchanged risk-drift failures, two expected
+signin 401 diagnostics, zero layout issues. Tracked-content Prettier comparison
+remains **143 before / 143 after**; Python/Ruff debt is unchanged.
+
+No automatic retries or retry endpoint are implemented: generation one and one
+BullMQ attempt only. The total logical deadline is 150 seconds, including queue
+and preparation time. Expired/crashed active attempts fail closed without relaunch;
+active host-SIGKILL recovery was not runtime-proven. Cancellation without a signed
+cleanup acknowledgement remains UNCERTAIN even if an operator observes removal;
+another application for that proposal is blocked. No automatic certainty override
+or operator cleanup reconciliation is implemented. Retained jobs/history require
+a separately designed retention policy. Staleness uses recorded PR metadata.
+
+Snapshot/object/size limits and the broker/Docker-daemon trusted-computing-base
+boundary remain unchanged. No universal secret non-leakage, secure erasure,
+compromised-kernel resistance, exactly-once processing, exhaustive accessibility or
+semantic patch quality is claimed. Scoped checks found no newly generated local
+credential values in proposed files or checked isolated API/worker/web/broker logs.
+All six prior migrations and the lock file remain byte-identical; the additive
+`20261003030000_patch_applications` migration was applied locally and is frozen.
+No provider request or GitHub mutation occurred. **Applied-code validation / Phase
+3F: NOT IMPLEMENTED.** Phase 3C deterministic verification remains PASSED; real
+Gemini investigation/tool/evidence PARTIALLY VERIFIED; final response/citations and
+multi-turn NOT VERIFIED. Phase 3D real-provider PROPOSE_PATCH remains NOT VERIFIED.
 
 ## Completion Estimate
 

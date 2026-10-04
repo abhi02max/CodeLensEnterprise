@@ -109,9 +109,26 @@ export function safeBrokerFailure(error: unknown): z.infer<typeof FailureCode> {
   if (error instanceof PatchCoreError) return 'MATERIALIZATION_VALIDATION_FAILED';
   return 'BROKER_INTERNAL_ERROR';
 }
-export function signBrokerResponse(key: Buffer, nonce: string, result: unknown) {
+export const BROKER_POLICY_VERSION = 'restricted-materialization-v1';
+export const BrokerDeploymentSchema = z
+  .object({
+    executorImage: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+    policyVersion: z.literal(BROKER_POLICY_VERSION),
+  })
+  .strict();
+export function signBrokerResponse(
+  key: Buffer,
+  nonce: string,
+  result: unknown,
+  deployment?: z.infer<typeof BrokerDeploymentSchema>,
+) {
   if (key.length !== 32) throw new Error('BROKER_KEY_REQUIRED');
-  const body = { version: 1, nonce, result: BrokerResultSchema.parse(result) };
+  const body = {
+    version: 1,
+    nonce,
+    result: BrokerResultSchema.parse(result),
+    ...(deployment ? { deployment: BrokerDeploymentSchema.parse(deployment) } : {}),
+  };
   return { ...body, mac: createHmac('sha256', key).update(JSON.stringify(body)).digest('hex') };
 }
 export function verifyBrokerResponse(
@@ -119,11 +136,15 @@ export function verifyBrokerResponse(
   nonce: string,
   raw: unknown,
 ): z.infer<typeof BrokerResultSchema> {
+  return verifyBrokerProof(key, nonce, raw).result;
+}
+export function verifyBrokerProof(key: Buffer, nonce: string, raw: unknown) {
   const value = z
     .object({
       version: z.literal(1),
       nonce: z.string().uuid(),
       result: BrokerResultSchema,
+      deployment: BrokerDeploymentSchema.optional(),
       mac: z.string().regex(/^[a-f0-9]{64}$/),
     })
     .strict()
@@ -132,9 +153,9 @@ export function verifyBrokerResponse(
     value.nonce !== nonce ||
     !timingSafeEqual(
       Buffer.from(value.mac, 'hex'),
-      Buffer.from(signBrokerResponse(key, nonce, value.result).mac, 'hex'),
+      Buffer.from(signBrokerResponse(key, nonce, value.result, value.deployment).mac, 'hex'),
     )
   )
     throw new Error('BROKER_RESPONSE_AUTHENTICATION_FAILED');
-  return value.result;
+  return { result: value.result, deployment: value.deployment };
 }

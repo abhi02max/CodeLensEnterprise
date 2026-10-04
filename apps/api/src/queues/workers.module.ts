@@ -7,6 +7,7 @@ import { RepoIndexProcessor } from './processors/repo-index.processor';
 import { ReviewRunProcessor } from './processors/review-run.processor';
 import { CollaborationModule } from '../collaboration/collaboration.module';
 import { CollaborationProcessor } from './processors/collaboration.processor';
+import { PatchApplicationProcessor } from './processors/patch-application.processor';
 
 /**
  * Consumer half of the queue layer.
@@ -21,6 +22,12 @@ import { CollaborationProcessor } from './processors/collaboration.processor';
  */
 @Module({
   imports: [AnalysisModule, RagModule, RepositoriesModule, CollaborationModule],
-  providers: [ReviewRunProcessor, RepoIndexProcessor, PrSyncProcessor, CollaborationProcessor],
+  providers: [
+    ReviewRunProcessor,
+    RepoIndexProcessor,
+    PrSyncProcessor,
+    CollaborationProcessor,
+    PatchApplicationProcessor,
+  ],
 })
 export class WorkersModule {}

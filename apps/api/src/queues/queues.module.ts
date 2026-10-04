@@ -5,6 +5,7 @@ import { AppConfigService } from '../config/app-config.service';
 import { JobsController } from './jobs.controller';
 import { QueueService } from './queue.service';
 import { MANAGED_QUEUES } from './queue.types';
+import { PATCH_APPLICATION_QUEUE, PatchApplicationQueue } from './patch-application.queue';
 
 /**
  * Producer half of the queue layer.
@@ -43,9 +44,10 @@ import { MANAGED_QUEUES } from './queue.types';
       }),
     }),
     ...MANAGED_QUEUES.map((name) => BullModule.registerQueue({ name })),
+    BullModule.registerQueue({ name: PATCH_APPLICATION_QUEUE }),
   ],
   controllers: [JobsController],
-  providers: [QueueService],
-  exports: [QueueService],
+  providers: [QueueService, PatchApplicationQueue],
+  exports: [QueueService, PatchApplicationQueue],
 })
 export class QueuesModule {}

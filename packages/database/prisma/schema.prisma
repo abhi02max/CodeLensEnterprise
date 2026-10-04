@@ -1208,6 +1208,7 @@ model PatchProposal {
   revisionTurns CollaborationTurn[] @relation("RevisionTarget")
   files PatchProposalFile[]
   evidence PatchProposalEvidence[]
+  applications PatchApplication[]
   @@unique([id, organizationId, turnId])
   @@unique([turnId, authorId, requestId])
   @@index([organizationId, conversationId, createdAt])
@@ -1238,6 +1239,76 @@ model PatchProposalEvidence {
   proposal PatchProposal @relation(fields: [proposalId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
   evidence EvidenceReference @relation(fields: [evidenceId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
   @@id([proposalId, evidenceId])
+}
+
+model PatchApplication {
+  id String @id @default(cuid())
+  organizationId String
+  proposalId String
+  turnId String
+  repositoryId String
+  pullRequestId String
+  conversationId String
+  requestedById String
+  requestId String @db.Uuid
+  requestHash String @db.VarChar(64)
+  proposalRevision Int
+  proposalDigest String @db.VarChar(64)
+  headSha String @db.VarChar(40)
+  baseSha String @db.VarChar(40)
+  executorImage String @db.VarChar(71)
+  policyVersion String @db.VarChar(40)
+  status String @default("QUEUED") @db.VarChar(16)
+  cleanup String @default("NOT_STARTED") @db.VarChar(16)
+  failureCategory String? @db.VarChar(64)
+  traceId String? @db.VarChar(100)
+  createdAt DateTime @default(now())
+  deadlineAt DateTime
+  completedAt DateTime?
+  proposal PatchProposal @relation(fields: [proposalId, organizationId, turnId], references: [id, organizationId, turnId], onDelete: Restrict)
+  attempts PatchApplicationAttempt[]
+  @@unique([id, organizationId])
+  @@unique([organizationId, requestedById, requestId])
+  @@index([organizationId, proposalId, id])
+  @@index([status, deadlineAt])
+}
+
+model PatchApplicationAttempt {
+  id String @id @default(cuid())
+  applicationId String
+  organizationId String
+  generation Int
+  jobId String @unique @db.VarChar(200)
+  fence String? @db.Uuid
+  brokerNonce String @unique @db.Uuid
+  status String @default("QUEUED") @db.VarChar(16)
+  cleanup String @default("NOT_STARTED") @db.VarChar(16)
+  failureCategory String? @db.VarChar(64)
+  createdAt DateTime @default(now())
+  deadlineAt DateTime
+  startedAt DateTime?
+  completedAt DateTime?
+  snapshotDigest String? @db.VarChar(64)
+  manifestDigest String? @db.VarChar(64)
+  application PatchApplication @relation(fields: [applicationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  files PatchApplicationFileResult[]
+  @@unique([applicationId, generation])
+  @@unique([id, applicationId, organizationId])
+  @@index([status, deadlineAt])
+}
+
+model PatchApplicationFileResult {
+  id String @id @default(cuid())
+  applicationId String
+  attemptId String
+  organizationId String
+  path String @db.VarChar(500)
+  oldBlobSha String @db.VarChar(40)
+  oldContentHash String @db.VarChar(64)
+  contentHash String @db.VarChar(64)
+  byteLength Int
+  attempt PatchApplicationAttempt @relation(fields: [attemptId, applicationId, organizationId], references: [id, applicationId, organizationId], onDelete: Restrict)
+  @@unique([attemptId, path])
 }
 
 enum ReviewVerdict {

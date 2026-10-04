@@ -6,7 +6,7 @@ import {
   MATERIALIZATION_LIMITS,
   type MaterializationRequest,
 } from '@codelens/patch-core';
-import { signBrokerRequest, verifyBrokerResponse } from './protocol';
+import { signBrokerRequest, verifyBrokerProof } from './protocol';
 
 // Future worker integration uses only this local typed channel, never Docker authority.
 export async function requestMaterialization(
@@ -16,8 +16,18 @@ export async function requestMaterialization(
   signal?: AbortSignal,
   deadlineAt = Date.now() + MATERIALIZATION_LIMITS.deadlineMs,
 ) {
+  return (await requestMaterializationProof(socketPath, key, payload, signal, deadlineAt)).result;
+}
+
+export async function requestMaterializationProof(
+  socketPath: string,
+  key: Buffer,
+  payload: MaterializationRequest,
+  signal?: AbortSignal,
+  deadlineAt = Date.now() + MATERIALIZATION_LIMITS.deadlineMs,
+  nonce: string = randomUUID(),
+) {
   if (signal?.aborted) throw new Error('BROKER_CANCELLED');
-  const nonce = randomUUID();
   const frame = encodeFrame(
     signBrokerRequest(key, nonce, Date.now(), payload, deadlineAt),
     MATERIALIZATION_LIMITS.inputBytes,
@@ -33,7 +43,7 @@ export async function requestMaterialization(
   try {
     const response = readFrame(socket, MATERIALIZATION_LIMITS.outputBytes);
     socket.end(frame);
-    return verifyBrokerResponse(key, nonce, await response);
+    return verifyBrokerProof(key, nonce, await response);
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener('abort', cancel);

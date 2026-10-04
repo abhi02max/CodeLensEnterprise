@@ -8,9 +8,16 @@ import { CollaborationExecutionService } from './collaboration-execution.service
 import { CollaborationProviderService } from './collaboration-provider.service';
 import { PatchProposalService } from './patch-proposal.service';
 import { PatchProposalController } from './patch-proposal.controller';
+import { PatchApplicationController } from './patch-application.controller';
+import { PatchApplicationService } from './patch-application.service';
 
 @Module({
-  controllers: [CollaborationController, InvestigationController, PatchProposalController],
+  controllers: [
+    CollaborationController,
+    InvestigationController,
+    PatchProposalController,
+    PatchApplicationController,
+  ],
   providers: [
     CollaborationService,
     InvestigationService,
@@ -18,7 +25,8 @@ import { PatchProposalController } from './patch-proposal.controller';
     CollaborationExecutionService,
     CollaborationProviderService,
     PatchProposalService,
+    PatchApplicationService,
   ],
-  exports: [CollaborationExecutionService],
+  exports: [CollaborationExecutionService, PatchApplicationService],
 })
 export class CollaborationModule {}

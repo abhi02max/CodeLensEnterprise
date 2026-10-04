@@ -13,7 +13,7 @@
     "dev": "pnpm build:packages && pnpm --parallel --filter \"./apps/**\" dev",
     "dev:web": "pnpm --filter @codelens/web dev",
     "dev:api": "pnpm build:packages && pnpm --filter @codelens/api dev",
-    "build:packages": "pnpm --filter \"./packages/**\" build",
+    "build:packages": "pnpm --filter \"./packages/**\" build && pnpm --filter @codelens/sandbox-broker build",
     "build": "pnpm db:generate && pnpm build:packages && pnpm --filter @codelens/api build && pnpm --filter @codelens/web build",
     "clean": "pnpm -r --if-present clean",
     "typecheck": "pnpm -r --if-present typecheck",

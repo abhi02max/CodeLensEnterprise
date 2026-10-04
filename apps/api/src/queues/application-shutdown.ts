@@ -9,15 +9,17 @@ import { PrSyncProcessor } from './processors/pr-sync.processor';
 import { CollaborationProcessor } from './processors/collaboration.processor';
 import { createShutdown } from './shutdown';
 import { MANAGED_QUEUES } from './queue.types';
+import { PATCH_APPLICATION_QUEUE } from './patch-application.queue';
+import { PatchApplicationProcessor } from './processors/patch-application.processor';
 
 export function installShutdown(app: INestApplicationContext): (signal: string) => void {
   const close = app.close.bind(app);
   const logger = new Logger('Shutdown');
   const shutdown = createShutdown({
     workers: () => [app.get(ReviewRunProcessor).worker, app.get(RepoIndexProcessor).worker,
-      app.get(PrSyncProcessor).worker, app.get(CollaborationProcessor).worker],
+      app.get(PrSyncProcessor).worker, app.get(CollaborationProcessor).worker, app.get(PatchApplicationProcessor).worker],
     closeQueues: async () => {
-      await Promise.all(MANAGED_QUEUES.map((name) => app.get<Queue>(getQueueToken(name)).close()));
+      await Promise.all([...MANAGED_QUEUES, PATCH_APPLICATION_QUEUE].map((name) => app.get<Queue>(getQueueToken(name)).close()));
     },
     closeApplication: close,
     markDraining: () => app.get(HealthService).markDraining(),

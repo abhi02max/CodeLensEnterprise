@@ -51,6 +51,9 @@ export const TENANT_SCOPED_MODELS = [
   'PatchProposal',
   'PatchProposalFile',
   'PatchProposalEvidence',
+  'PatchApplication',
+  'PatchApplicationAttempt',
+  'PatchApplicationFileResult',
 ] as const;
 
 const TENANT_MODEL_SET: ReadonlySet<string> = new Set(TENANT_SCOPED_MODELS);

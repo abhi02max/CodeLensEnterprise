@@ -51,6 +51,9 @@ export class AppConfigService {
   get redisUrl(): string {
     return this.get('REDIS_URL');
   }
+  get executorImage(): string {
+    return this.get('CODELENS_EXECUTOR_IMAGE_ID');
+  }
 
   // ---------------------------------------------------------------- auth
   get jwtSecret(): string {

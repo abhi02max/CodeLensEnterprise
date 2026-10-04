@@ -15,6 +15,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@codelens/sandbox-broker": "workspace:*",
     "@codelens/patch-core": "workspace:*",
     "@codelens/ai-agent": "workspace:*",
     "@codelens/database": "workspace:*",

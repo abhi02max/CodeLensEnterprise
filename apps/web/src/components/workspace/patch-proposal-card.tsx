@@ -8,6 +8,7 @@ import { Button, Alert, Textarea } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { EvidenceReferenceCard } from './evidence-viewer';
+import { PatchApplicationPanel } from './patch-application-panel';
 
 export function PatchProposals({ conversationId }: { conversationId: string }) {
   const [afterId, setAfterId] = React.useState<string | undefined>();
@@ -102,6 +103,7 @@ export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView
   });
   return (
     <article
+      id={`patch-proposal-${p.id}`}
       aria-label={`Patch proposal revision ${p.revision}`}
       className="rounded border border-surface-border bg-white p-3 text-sm"
     >
@@ -276,6 +278,7 @@ export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView
             : 'Proposal command failed. No repository files changed.'}
         </Alert>
       )}
+      <PatchApplicationPanel proposal={p} />
     </article>
   );
 }

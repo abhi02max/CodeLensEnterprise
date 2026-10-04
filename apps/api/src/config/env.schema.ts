@@ -54,6 +54,7 @@ export const EnvSchema = z.object({
   // ---------------------------------------------------------------- data
   DATABASE_URL: z.string().min(1).startsWith('postgres', 'DATABASE_URL must be a Postgres URL'),
   REDIS_URL: z.string().min(1).startsWith('redis', 'REDIS_URL must be a redis:// URL'),
+  CODELENS_EXECUTOR_IMAGE_ID: z.union([z.literal(''), z.string().regex(/^sha256:[a-f0-9]{64}$/)]).default(''),
 
   // ---------------------------------------------------------------- auth
   JWT_SECRET: secret('JWT_SECRET'),

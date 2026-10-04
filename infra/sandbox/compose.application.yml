@@ -1,0 +1,35 @@
+# Deployment overlay: docker compose -f docker-compose.yml -f infra/sandbox/compose.application.yml up
+# Only the broker owns Docker authority. The worker receives a typed local channel.
+services:
+  api:
+    environment:
+      CODELENS_EXECUTOR_IMAGE_ID: ${CODELENS_EXECUTOR_IMAGE_ID:?Pin the restricted executor image ID}
+  worker:
+    environment:
+      CODELENS_EXECUTOR_IMAGE_ID: ${CODELENS_EXECUTOR_IMAGE_ID:?Pin the restricted executor image ID}
+    volumes:
+      - sandbox_control:/control:ro
+    secrets: [broker-key]
+    depends_on:
+      sandbox-broker: { condition: service_started }
+  sandbox-broker:
+    image: ${SANDBOX_BROKER_IMAGE:?Specify the reviewed broker image}
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      CODELENS_EXECUTOR_IMAGE_ID: ${CODELENS_EXECUTOR_IMAGE_ID:?Pin the restricted executor image ID}
+      CODELENS_SANDBOX_NAMESPACE: ${COMPOSE_PROJECT_NAME:?Set a dedicated deployment namespace}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - sandbox_control:/control
+      - sandbox_journal:/journal
+    secrets: [broker-key]
+    stop_grace_period: 180s
+volumes:
+  sandbox_control:
+  sandbox_journal:
+secrets:
+  broker-key:
+    file: ${SANDBOX_BROKER_KEY_FILE:?Provide a local 32-byte secret file}
