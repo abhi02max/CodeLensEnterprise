@@ -1,0 +1,23 @@
+{
+  "name": "@codelens/validation-broker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/protocol.js",
+  "types": "dist/protocol.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/main.ts src/protocol.ts --bundle --platform=node --target=node22 --outdir=dist/runtime",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codelens/shared": "workspace:*",
+    "@codelens/validation-executor": "workspace:*",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "vitest": "2.1.8",
+    "esbuild": "0.23.1"
+  }
+}

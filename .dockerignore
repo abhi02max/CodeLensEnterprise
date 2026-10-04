@@ -11,6 +11,8 @@ apps/web/test
 apps/api/test
 apps/patch-executor/test
 apps/sandbox-broker/test
+apps/validation-executor/test
+apps/validation-broker/test
 docs
 screenshots
 .codelens-tmp

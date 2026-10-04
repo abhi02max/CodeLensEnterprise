@@ -1,0 +1,30 @@
+services:
+  validation-broker:
+    image: codelens-phase3f-foundation-broker:local
+    environment:
+      CODELENS_VALIDATION_BACKEND: docker-local-proof
+      CODELENS_VALIDATION_LOCAL_PROOF: "true"
+      CODELENS_VALIDATION_IMAGE: ${VALIDATION_EXECUTOR_IMAGE:?pinned executor image required}
+      CODELENS_VALIDATION_NAMESPACE: ${COMPOSE_PROJECT_NAME:?isolated project required}
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    stop_grace_period: 45s
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - validation_control:/control
+      - validation_journal:/journal
+    secrets:
+      - source: validation_key
+        target: validation-key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8388608
+secrets:
+  validation_key:
+    file: ${VALIDATION_KEY_FILE:?separate local validation key required}
+volumes:
+  validation_control:
+  validation_journal:

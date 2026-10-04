@@ -1,9 +1,11 @@
 packages:
-  - 'apps/web'
-  - 'apps/api'
-  - 'apps/patch-executor'
-  - 'apps/sandbox-broker'
-  - 'packages/*'
+  - "apps/web"
+  - "apps/api"
+  - "apps/patch-executor"
+  - "apps/sandbox-broker"
+  - "apps/validation-executor"
+  - "apps/validation-broker"
+  - "packages/*"
 
 # pnpm 11 blocks dependency build scripts by default (strictDepBuilds) and
 # replaced the old onlyBuiltDependencies list with this allowBuilds map.
@@ -17,8 +19,8 @@ packages:
 # placeholder entry here, so entries must be resolved to true/false rather than left
 # as prose or the next install fails on a duplicated key.
 allowBuilds:
-  '@prisma/client': true
-  '@prisma/engines': true
+  "@prisma/client": true
+  "@prisma/engines": true
   prisma: true
   esbuild: true
   unrs-resolver: true
@@ -29,7 +31,7 @@ allowBuilds:
   # @scarf/scarf is install-time analytics that makes an outbound request when a
   # dependency is installed. It is not needed to build or run anything here, and a
   # build pipeline should not phone home.
-  '@scarf/scarf': false
+  "@scarf/scarf": false
   # Optional native accelerator for msgpackr (pulled in by BullMQ). msgpackr falls
   # back to its pure-JS path without it, so denying avoids requiring a native
   # toolchain on developer machines for a marginal serialization speedup.

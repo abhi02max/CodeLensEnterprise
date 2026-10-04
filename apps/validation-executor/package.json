@@ -1,0 +1,23 @@
+{
+  "name": "@codelens/validation-executor",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/contracts.js",
+  "types": "dist/contracts.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/main.ts src/prepare.ts --bundle --platform=node --target=node22 --outdir=dist/runtime --external:/build/apps/validation-executor/node_modules/typescript",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codelens/shared": "workspace:*",
+    "zod": "3.24.1",
+    "typescript": "5.7.3",
+    "vitest": "2.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "esbuild": "0.23.1"
+  }
+}
