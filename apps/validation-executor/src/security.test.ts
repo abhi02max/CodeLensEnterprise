@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm, writeFile, symlink, link } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, symlink, link, chmod, lstat, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkCompatibility, validateInput, LIMITS } from './contracts';
@@ -96,12 +96,25 @@ describe.skipIf(process.platform === 'win32')(
       return root;
     };
     afterEach(async () => {
-      for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+      // Restore only fixture directory permissions; never follow generated symlinks.
+      const restoreDirectories = async (path: string): Promise<void> => {
+        const st = await lstat(path);
+        if (!st.isDirectory() || st.isSymbolicLink()) return;
+        await chmod(path, 0o700);
+        for (const entry of await readdir(path)) await restoreDirectories(join(path, entry));
+      };
+      for (const root of roots.splice(0)) {
+        await restoreDirectories(root);
+        await rm(root, { recursive: true, force: true });
+      }
     });
     const report = JSON.stringify({ version: 1, kind: 'tests', passed: 1, failed: 0, total: 1 });
     it('prepares source only once', async () => {
       const root = await dir();
       await prepareSource(input(), root);
+      expect((await lstat(root)).mode & 0o777).toBe(0o555);
+      expect((await lstat(join(root, 'src'))).mode & 0o777).toBe(0o555);
+      expect((await lstat(join(root, 'package.json'))).mode & 0o777).toBe(0o444);
       await expect(prepareSource(input(), root)).rejects.toThrow();
     });
     it('accepts only a bounded regular report', async () => {
