@@ -7,7 +7,7 @@ import {
   type ListAuditLogsQuery,
   type Paginated,
 } from '@codelens/shared';
-import { ActorType, type Prisma } from '@codelens/database';
+import { ActorType, type Prisma, type PrismaTransactionClient } from '@codelens/database';
 import { NotFoundError } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -44,23 +44,28 @@ export class AuditService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Critical events use the caller's transaction and must propagate write failures. */
+  async recordInTransaction(db: PrismaTransactionClient, input: AuditRecordInput): Promise<void> {
+    await db.auditLog.create({
+      data: {
+        organizationId: input.organizationId,
+        action: input.action,
+        actorType: input.actorType ?? (input.actorId ? ActorType.USER : ActorType.SYSTEM),
+        actorId: input.actorId ?? null,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId ?? null,
+        description: input.description,
+        metadata: sanitizeMetadata(input.metadata ?? {}),
+        ipAddress: input.ipAddress ?? null,
+        userAgent: input.userAgent?.slice(0, 500) ?? null,
+        traceId: input.traceId ?? null,
+      },
+    });
+  }
+
   async record(input: AuditRecordInput): Promise<void> {
     try {
-      await this.prisma.unscoped.auditLog.create({
-        data: {
-          organizationId: input.organizationId,
-          action: input.action,
-          actorType: input.actorType ?? (input.actorId ? ActorType.USER : ActorType.SYSTEM),
-          actorId: input.actorId ?? null,
-          resourceType: input.resourceType,
-          resourceId: input.resourceId ?? null,
-          description: input.description,
-          metadata: sanitizeMetadata(input.metadata ?? {}),
-          ipAddress: input.ipAddress ?? null,
-          userAgent: input.userAgent?.slice(0, 500) ?? null,
-          traceId: input.traceId ?? null,
-        },
-      });
+      await this.recordInTransaction(this.prisma.unscoped, input);
     } catch (error) {
       this.logger.error(
         `Failed to write audit entry ${input.action} for org ${input.organizationId}: ` +

@@ -6,6 +6,7 @@ import { IdSchema } from './common';
 
 export const SubmitReviewSchema = z.object({
   verdict: z.nativeEnum(ReviewVerdict),
+  expectedHeadSha: z.string().regex(/^[a-f0-9]{40}$/, 'Expected a full Git commit SHA'),
   summary: z.string().trim().max(10_000).optional(),
   /** Checklist items the reviewer explicitly confirmed. */
   acknowledgedChecklistItems: z.array(z.string().max(300)).max(40).default([]),

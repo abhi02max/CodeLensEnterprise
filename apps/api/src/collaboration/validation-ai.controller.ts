@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { z } from 'zod';
 import { Role, ValidationAiRequestSchema } from '@codelens/shared';
@@ -29,14 +30,18 @@ export class ValidationAiController {
     return this.ai.request({ organizationId, userId: user.userId, traceId }, id, input);
   }
   @Get()
-  get(
+  async get(
     @OrgId() organizationId: string,
     @CurrentUser() user: AuthenticatedUser,
     @TraceId() traceId: string,
     @Param('id') id: string,
     @Query(zodQuery(query)) input: z.infer<typeof query>,
+    @Res() response: Response,
   ) {
-    return this.ai.get({ organizationId, userId: user.userId, traceId }, id, input.reviewId);
+    // Nest's default null return is an empty body, not the nullable JSON contract.
+    return response.json(
+      await this.ai.get({ organizationId, userId: user.userId, traceId }, id, input.reviewId),
+    );
   }
   @Post(':reviewId/cancel')
   @HttpCode(200)

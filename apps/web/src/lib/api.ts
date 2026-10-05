@@ -250,16 +250,16 @@ export const api = {
       { method: 'POST', body: input },
     ),
 
-  approve: (id: string, summary?: string) =>
+  approve: (id: string, expectedHeadSha: string, summary?: string) =>
     apiRequest<{ review: ReviewView; gate: ReviewGateStatus }>(`/review-sessions/${id}/approve`, {
       method: 'POST',
-      body: summary ? { summary } : {},
+      body: { expectedHeadSha, ...(summary ? { summary } : {}) },
     }),
 
-  requestChanges: (id: string, summary?: string) =>
+  requestChanges: (id: string, expectedHeadSha: string, summary?: string) =>
     apiRequest<{ review: ReviewView; gate: ReviewGateStatus }>(
       `/review-sessions/${id}/request-changes`,
-      { method: 'POST', body: summary ? { summary } : {} },
+      { method: 'POST', body: { expectedHeadSha, ...(summary ? { summary } : {}) } },
     ),
 
   // ---------------------------------------------------------------- comments

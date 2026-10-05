@@ -4,12 +4,13 @@ import {
   Role,
   ReviewVerdict as SharedReviewVerdict,
   ShareScope,
+  SubmitReviewSchema,
   type ReviewGateStatus,
   type ReviewView,
   type SubmitReviewInput,
 } from '@codelens/shared';
 import { ReviewVerdict } from '@codelens/database';
-import { ForbiddenError, NotFoundError, ValidationError } from '../common/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit-logs/audit.service';
 import { PolicyService } from '../organizations/policy.service';
@@ -246,118 +247,131 @@ export class ReviewSessionsService {
     ipAddress: string | null;
     userAgent: string | null;
   }): Promise<{ review: ReviewView; gate: ReviewGateStatus }> {
-    const pullRequest = await this.prisma.unscoped.pullRequest.findFirst({
-      where: { id: params.pullRequestId, organizationId: params.organizationId },
-      select: {
-        id: true,
-        number: true,
-        headSha: true,
-        authorUserId: true,
-        merged: true,
-        wasRisky: true,
-        firstReviewedAt: true,
-        githubCreatedAt: true,
-        repository: { select: { fullName: true } },
-      },
-    });
-
-    if (!pullRequest) throw new NotFoundError('Review session', params.pullRequestId);
-
+    const input = SubmitReviewSchema.parse(params.input);
     const policy = await this.policy.getPolicy(params.organizationId);
+    const { pullRequest, review } = await this.prisma.$transaction(async (db) => {
+      // Serialize verdicts with authoritative head updates, including concurrent requests.
+      await db.$queryRaw`SELECT id FROM "PullRequest" WHERE id=${params.pullRequestId} AND "organizationId"=${params.organizationId} FOR UPDATE`;
+      const pullRequest = await db.pullRequest.findFirst({
+        where: { id: params.pullRequestId, organizationId: params.organizationId },
+        select: {
+          id: true,
+          number: true,
+          headSha: true,
+          authorUserId: true,
+          merged: true,
+          wasRisky: true,
+          firstReviewedAt: true,
+          githubCreatedAt: true,
+          repository: { select: { fullName: true } },
+        },
+      });
 
-    const permissions = computePermissions({
-      role: params.role,
-      userId: params.userId,
-      pullRequestAuthorUserId: pullRequest.authorUserId,
-      githubCommentMinRole: policy.githubCommentMinRole,
-    });
+      if (!pullRequest) throw new NotFoundError('Review session', params.pullRequestId);
 
-    // Enforced here, not only reported in the workspace payload. The permissions block is a
-    // UI affordance; this is the authorization.
-    if (params.verdict === ReviewVerdict.APPROVED && !permissions.canApprove) {
-      throw new ForbiddenError(
-        permissions.deniedReasons.canApprove ?? 'You may not approve this pull request.',
-        { verdict: params.verdict, role: params.role },
-      );
-    }
+      if (input.expectedHeadSha !== pullRequest.headSha) {
+        throw new ConflictError(
+          'The pull request changed after this review was loaded. Refresh the review before submitting a verdict.',
+          { reason: 'HEAD_CHANGED' },
+        );
+      }
 
-    if (params.verdict !== ReviewVerdict.APPROVED && !permissions.canRequestChanges) {
-      throw new ForbiddenError(
-        permissions.deniedReasons.canRequestChanges ?? 'You may not submit a verdict.',
-        { verdict: params.verdict, role: params.role },
-      );
-    }
+      const permissions = computePermissions({
+        role: params.role,
+        userId: params.userId,
+        pullRequestAuthorUserId: pullRequest.authorUserId,
+        githubCommentMinRole: policy.githubCommentMinRole,
+      });
 
-    if (pullRequest.merged) {
-      throw new ValidationError(
-        'This pull request is already merged, so a verdict would have no effect. Comment on it ' +
-          'instead if there is something worth recording.',
-      );
-    }
+      // Enforced here, not only reported in the workspace payload. The permissions block is a
+      // UI affordance; this is the authorization.
+      if (params.verdict === ReviewVerdict.APPROVED && !permissions.canApprove) {
+        throw new ForbiddenError(
+          permissions.deniedReasons.canApprove ?? 'You may not approve this pull request.',
+          { verdict: params.verdict, role: params.role },
+        );
+      }
 
-    const dismissedFingerprints = params.input.dismissedFindings.map((entry) => entry.fingerprint);
+      if (params.verdict !== ReviewVerdict.APPROVED && !permissions.canRequestChanges) {
+        throw new ForbiddenError(
+          permissions.deniedReasons.canRequestChanges ?? 'You may not submit a verdict.',
+          { verdict: params.verdict, role: params.role },
+        );
+      }
 
-    const review = await this.prisma.unscoped.review.upsert({
-      where: {
-        pullRequestId_reviewerId_headSha: {
+      if (pullRequest.merged) {
+        throw new ValidationError(
+          'This pull request is already merged, so a verdict would have no effect. Comment on it ' +
+            'instead if there is something worth recording.',
+        );
+      }
+
+      const dismissedFingerprints = input.dismissedFindings.map((entry) => entry.fingerprint);
+
+      const review = await db.review.upsert({
+        where: {
+          pullRequestId_reviewerId_headSha: {
+            pullRequestId: pullRequest.id,
+            reviewerId: params.userId,
+            headSha: pullRequest.headSha,
+          },
+        },
+        create: {
+          organizationId: params.organizationId,
           pullRequestId: pullRequest.id,
           reviewerId: params.userId,
+          verdict: params.verdict,
+          summary: input.summary ?? null,
           headSha: pullRequest.headSha,
+          acknowledgedChecklistItems: input.acknowledgedChecklistItems,
+          dismissedFindingCount: dismissedFingerprints.length,
         },
-      },
-      create: {
+        update: {
+          verdict: params.verdict,
+          summary: input.summary ?? null,
+          acknowledgedChecklistItems: input.acknowledgedChecklistItems,
+          dismissedFindingCount: dismissedFingerprints.length,
+        },
+        include: { reviewer: { select: { id: true, name: true, avatarUrl: true } } },
+      });
+
+      await this.audit.recordInTransaction(db, {
         organizationId: params.organizationId,
-        pullRequestId: pullRequest.id,
-        reviewerId: params.userId,
-        verdict: params.verdict,
-        summary: params.input.summary ?? null,
-        headSha: pullRequest.headSha,
-        acknowledgedChecklistItems: params.input.acknowledgedChecklistItems,
-        dismissedFindingCount: dismissedFingerprints.length,
-      },
-      update: {
-        verdict: params.verdict,
-        summary: params.input.summary ?? null,
-        acknowledgedChecklistItems: params.input.acknowledgedChecklistItems,
-        dismissedFindingCount: dismissedFingerprints.length,
-      },
-      include: { reviewer: { select: { id: true, name: true, avatarUrl: true } } },
+        action: AuditAction.REVIEW_SUBMITTED,
+        actorId: params.userId,
+        resourceType: 'Review',
+        resourceId: review.id,
+        description:
+          `${verdictLabel(params.verdict)} ${pullRequest.repository.fullName}` +
+          `#${pullRequest.number} at ${pullRequest.headSha.slice(0, 7)}` +
+          (dismissedFingerprints.length > 0
+            ? `, dismissing ${dismissedFingerprints.length} finding(s)`
+            : ''),
+        metadata: {
+          pullRequestId: pullRequest.id,
+          verdict: params.verdict,
+          headSha: pullRequest.headSha,
+          acknowledgedChecklistItems: input.acknowledgedChecklistItems,
+          // Fingerprints and reasons, not the finding text. Dismissals are the signal the noise
+          // filter learns from, so which rule was dismissed and why is the part worth keeping.
+          dismissedFindings: input.dismissedFindings.map((entry) => ({
+            fingerprint: entry.fingerprint,
+            reason: entry.reason,
+          })),
+          hasSummary: Boolean(input.summary),
+        },
+        traceId: params.traceId,
+        ipAddress: params.ipAddress,
+        userAgent: params.userAgent,
+      });
+      return { pullRequest, review };
     });
 
+    // Training feedback is noncritical and happens only after verdict and audit commit.
     await this.recordTrainingLabels({
       organizationId: params.organizationId,
       pullRequest,
       verdict: params.verdict,
-    });
-
-    await this.audit.record({
-      organizationId: params.organizationId,
-      action: AuditAction.REVIEW_SUBMITTED,
-      actorId: params.userId,
-      resourceType: 'Review',
-      resourceId: review.id,
-      description:
-        `${verdictLabel(params.verdict)} ${pullRequest.repository.fullName}` +
-        `#${pullRequest.number} at ${pullRequest.headSha.slice(0, 7)}` +
-        (dismissedFingerprints.length > 0
-          ? `, dismissing ${dismissedFingerprints.length} finding(s)`
-          : ''),
-      metadata: {
-        pullRequestId: pullRequest.id,
-        verdict: params.verdict,
-        headSha: pullRequest.headSha,
-        acknowledgedChecklistItems: params.input.acknowledgedChecklistItems,
-        // Fingerprints and reasons, not the finding text. Dismissals are the signal the noise
-        // filter learns from, so which rule was dismissed and why is the part worth keeping.
-        dismissedFindings: params.input.dismissedFindings.map((entry) => ({
-          fingerprint: entry.fingerprint,
-          reason: entry.reason,
-        })),
-        hasSummary: Boolean(params.input.summary),
-      },
-      traceId: params.traceId,
-      ipAddress: params.ipAddress,
-      userAgent: params.userAgent,
     });
 
     const [reviews, analysis, threads] = await Promise.all([

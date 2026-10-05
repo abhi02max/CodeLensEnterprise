@@ -327,6 +327,12 @@ function VerdictPanel({
   const queryClient = useQueryClient();
   const [summary, setSummary] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+  const [headChanged, setHeadChanged] = React.useState(false);
+
+  const onError = (caught: unknown) => {
+    setError(caught instanceof ApiError ? caught.message : 'Could not submit the verdict');
+    setHeadChanged(caught instanceof ApiError && caught.status === 409);
+  };
 
   const refresh = () => {
     setSummary('');
@@ -335,23 +341,34 @@ function VerdictPanel({
   };
 
   const approve = useMutation({
-    mutationFn: () => api.approve(sessionId, summary.trim() || undefined),
+    mutationFn: () => api.approve(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
     onMutate: () => setError(null),
     onSuccess: refresh,
-    onError: (caught) =>
-      setError(caught instanceof ApiError ? caught.message : 'Could not submit the verdict'),
+    onError,
   });
 
   const requestChanges = useMutation({
-    mutationFn: () => api.requestChanges(sessionId, summary.trim() || undefined),
+    mutationFn: () => api.requestChanges(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
     onMutate: () => setError(null),
     onSuccess: refresh,
-    onError: (caught) =>
-      setError(caught instanceof ApiError ? caught.message : 'Could not submit the verdict'),
+    onError,
+  });
+
+  const refreshReview = useMutation({
+    mutationFn: () => queryClient.invalidateQueries(
+      { queryKey: ['review-session', sessionId] },
+      { throwOnError: true },
+    ),
+    onMutate: () => setSummary(''),
+    onSuccess: () => {
+      setError(null);
+      setHeadChanged(false);
+    },
+    onError: () => setError('Could not refresh the review. Try again before submitting a verdict.'),
   });
 
   const { permissions } = session;
-  const busy = approve.isPending || requestChanges.isPending;
+  const busy = approve.isPending || requestChanges.isPending || refreshReview.isPending;
 
   return (
     <Card>
@@ -360,6 +377,10 @@ function VerdictPanel({
         subtitle={`Applies to ${shortSha(session.pullRequest.headSha)}`}
       />
       <CardBody className="space-y-2.5">
+        <p className="text-xs text-slate-500">
+          This verdict concerns the PR head, not the isolated candidate. Accepting or validating a
+          proposal does not change the PR branch.
+        </p>
         {session.reviews.length > 0 && (
           <ul className="space-y-1 border-b border-surface-border pb-2">
             {session.reviews.map((review) => (
@@ -396,13 +417,21 @@ function VerdictPanel({
             />
 
             {error && <Alert tone="danger">{error}</Alert>}
+            {headChanged && (
+              <Button
+                disabled={busy}
+                onClick={() => refreshReview.mutate()}
+              >
+                Refresh review
+              </Button>
+            )}
 
             <div className="flex gap-2">
               <Button
                 variant="approve"
                 className="flex-1"
                 loading={approve.isPending}
-                disabled={!permissions.canApprove || busy}
+                disabled={!permissions.canApprove || busy || headChanged}
                 title={permissions.deniedReasons.canApprove}
                 onClick={() => approve.mutate()}
               >
@@ -412,7 +441,7 @@ function VerdictPanel({
                 variant="reject"
                 className="flex-1"
                 loading={requestChanges.isPending}
-                disabled={!permissions.canRequestChanges || busy}
+                disabled={!permissions.canRequestChanges || busy || headChanged}
                 onClick={() => requestChanges.mutate()}
               >
                 Request changes
