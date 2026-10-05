@@ -14,6 +14,9 @@ import { ValidationController } from './validation.controller';
 import { ValidationService } from './validation.service';
 import { ValidationMlService } from './validation-ml.service';
 import { ValidationMlController } from './validation-ml.controller';
+import { ValidationAiService } from './validation-ai.service';
+import { ValidationAiController } from './validation-ai.controller';
+import { ValidationAiProviderService } from './validation-ai-provider.service';
 
 @Module({
   controllers: [
@@ -23,6 +26,7 @@ import { ValidationMlController } from './validation-ml.controller';
     PatchApplicationController,
     ValidationController,
     ValidationMlController,
+    ValidationAiController,
   ],
   providers: [
     CollaborationService,
@@ -34,8 +38,11 @@ import { ValidationMlController } from './validation-ml.controller';
     PatchApplicationService,
     ValidationService,
     ValidationMlService,
+    ValidationAiService,
+    ValidationAiProviderService,
   ],
   exports: [
+    ValidationAiService,
     CollaborationExecutionService,
     PatchApplicationService,
     ValidationService,

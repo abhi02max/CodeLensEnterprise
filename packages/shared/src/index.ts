@@ -6,3 +6,4 @@ export * from './secret-patterns';
 export * from './diagnostic-redaction';
 export * from './utils';
 export * from './contracts';
+export * from './contracts/validation-ai';

@@ -1345,6 +1345,7 @@ model ValidationRun {
   attempts ValidationAttempt[]
   staticAnalyses ValidationStaticAnalysis[]
   mlComparisons ValidationMlComparison[]
+  aiReviews ValidationAiReview[]
   @@unique([id, organizationId])
   @@unique([organizationId, requestedById, requestId])
   @@index([organizationId, applicationId, id])
@@ -1480,6 +1481,89 @@ model ValidationMlComparison {
   @@unique([organizationId, requestedById, requestId])
   @@index([organizationId, validationId, createdAt])
   @@index([state, deadlineAt])
+}
+
+model ValidationAiReview {
+  id String @id @default(uuid()) @db.Uuid
+  organizationId String
+  repositoryId String
+  pullRequestId String
+  validationId String
+  applicationId String
+  proposalId String
+  requestedById String
+  requestId String @db.Uuid
+  requestHash String @db.VarChar(64)
+  proposalRevision Int
+  proposalDigest String @db.VarChar(64)
+  baseSha String @db.VarChar(40)
+  headSha String @db.VarChar(40)
+  snapshotDigest String @db.VarChar(64)
+  candidateDigest String @db.VarChar(64)
+  staticIds String[]
+  mlComparisonId String @db.Uuid
+  packetVersion String @db.VarChar(80)
+  promptVersion String @db.VarChar(80)
+  schemaVersion String @db.VarChar(80)
+  packetDigest String? @db.VarChar(64)
+  packetHeader Json?
+  requestedProvider String @db.VarChar(32)
+  requestedModel String @db.VarChar(128)
+  configurationDigest String @db.VarChar(64)
+  reportedProvider String? @db.VarChar(32)
+  reportedModel String? @db.VarChar(128)
+  state String @default("QUEUED") @db.VarChar(16)
+  assessment String? @db.VarChar(24)
+  result Json?
+  failureCategory String? @db.VarChar(64)
+  fence String? @db.Uuid
+  createdAt DateTime @default(now())
+  startedAt DateTime?
+  deadlineAt DateTime
+  completedAt DateTime?
+  run ValidationRun @relation(fields: [validationId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  attempts ValidationAiReviewAttempt[]
+  evidence ValidationAiEvidenceReference[]
+  @@unique([id, organizationId])
+  @@unique([organizationId, requestedById, requestId])
+  @@index([organizationId, validationId, createdAt])
+  @@index([state, deadlineAt])
+}
+
+model ValidationAiReviewAttempt {
+  id String @id @default(uuid()) @db.Uuid
+  reviewId String @db.Uuid
+  organizationId String
+  generation Int @default(1)
+  fence String @db.Uuid
+  requests Int @default(0)
+  retries Int @default(0)
+  repairs Int @default(0)
+  reservedTokens Int @default(0)
+  promptTokens Int?
+  completionTokens Int?
+  unknownRequests Int @default(0)
+  durationMs Int @default(0)
+  failureCategory String? @db.VarChar(64)
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  review ValidationAiReview @relation(fields: [reviewId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  @@unique([reviewId, generation])
+}
+
+model ValidationAiEvidenceReference {
+  reviewId String @db.Uuid
+  organizationId String
+  evidenceId String @db.VarChar(64)
+  sourceId String @db.VarChar(160)
+  type String @db.VarChar(32)
+  trust String @db.VarChar(32)
+  contentDigest String @db.VarChar(64)
+  ordinal Int
+  payload Json
+  review ValidationAiReview @relation(fields: [reviewId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  @@id([reviewId, evidenceId])
+  @@unique([reviewId, ordinal])
 }
 
 model ValidationMlAssessment {

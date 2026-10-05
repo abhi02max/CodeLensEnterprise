@@ -103,6 +103,7 @@ export class OpenAiProvider implements LlmProvider {
     jsonMode?: boolean;
     signal?: AbortSignal;
     retryAttempts?: number;
+    maxResponseBytes?: number;
   }): Promise<LlmCompletion> {
     const baseUrl = this.config.baseUrl ?? 'https://api.openai.com/v1';
 
@@ -127,10 +128,10 @@ export class OpenAiProvider implements LlmProvider {
         });
 
         if (!response.ok) {
-          throw await toProviderError(response, this.name);
+          throw await toProviderError(response, this.name, params.maxResponseBytes, params.signal);
         }
 
-        const data = (await response.json().catch(() => { throw new LlmProviderError(`${this.name} response was not valid JSON`, response.status, false, this.name); })) as {
+        const data = (await providerJson(response, this.name, params.maxResponseBytes, params.signal)) as {
           choices: Array<{ message: { content: string | null }; finish_reason: string }>;
           usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
           model: string;
@@ -147,6 +148,7 @@ export class OpenAiProvider implements LlmProvider {
 
         return {
           content: choice.message.content ?? '',
+          usageReported: validUsage(data.usage?.prompt_tokens, data.usage?.completion_tokens),
           usage,
           model: data.model,
           finishReason: choice.finish_reason,
@@ -177,6 +179,7 @@ export class AnthropicProvider implements LlmProvider {
     jsonMode?: boolean;
     signal?: AbortSignal;
     retryAttempts?: number;
+    maxResponseBytes?: number;
   }): Promise<LlmCompletion> {
     const baseUrl = this.config.baseUrl ?? 'https://api.anthropic.com';
 
@@ -216,10 +219,10 @@ export class AnthropicProvider implements LlmProvider {
         });
 
         if (!response.ok) {
-          throw await toProviderError(response, this.name);
+          throw await toProviderError(response, this.name, params.maxResponseBytes, params.signal);
         }
 
-        const data = (await response.json().catch(() => { throw new LlmProviderError('ANTHROPIC response was not valid JSON', response.status, false, this.name); })) as {
+        const data = (await providerJson(response, this.name, params.maxResponseBytes, params.signal)) as {
           content: Array<{ type: string; text?: string }>;
           usage?: { input_tokens: number; output_tokens: number };
           model: string;
@@ -241,6 +244,7 @@ export class AnthropicProvider implements LlmProvider {
           // Re-attach the prefilled brace so the result parses as JSON.
           content: params.jsonMode && !text.trimStart().startsWith('{') ? `{${text}` : text,
           usage,
+          usageReported: validUsage(data.usage?.input_tokens, data.usage?.output_tokens),
           model: data.model,
           finishReason: data.stop_reason,
           costCents: computeCostCents(data.model, usage, this.config.pricing),
@@ -340,8 +344,8 @@ export class ProviderRouter implements LlmProvider {
  * enum value (`invalid_api_key`, `context_length_exceeded`) and tells the operator what to fix
  * without reproducing anything that was sent.
  */
-async function toProviderError(response: Response, provider: string): Promise<LlmProviderError> {
-  const body = await response.text().catch(() => '');
+async function toProviderError(response: Response, provider: string, maxBytes?: number, signal?: AbortSignal): Promise<LlmProviderError> {
+  const body = maxBytes === undefined ? await response.text().catch(() => '') : await boundedProviderBody(response, provider, maxBytes, signal);
   const detail = extractProviderErrorCode(body);
 
   // 429 and 5xx are transient. 400/401/403 indicate a configuration problem and
@@ -357,6 +361,41 @@ async function toProviderError(response: Response, provider: string): Promise<Ll
     provider,
     detail,
   );
+}
+
+function validUsage(prompt: unknown, completion: unknown): boolean {
+  return [prompt, completion].every(v => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0);
+}
+
+async function providerJson(response: Response, provider: string, maxBytes?: number, signal?: AbortSignal): Promise<unknown> {
+  const body = maxBytes === undefined ? await response.text() : await boundedProviderBody(response, provider, maxBytes, signal);
+  try { return JSON.parse(body); }
+  catch { throw new LlmProviderError('Provider response was not valid JSON', response.status, false, provider); }
+}
+
+async function boundedProviderBody(response: Response, provider: string, maxBytes: number, signal?: AbortSignal): Promise<string> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 1048576) throw new Error('Invalid response limit');
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const abort = () => { void reader.cancel().catch(() => undefined); };
+  signal?.addEventListener('abort', abort, { once: true });
+  try {
+    signal?.throwIfAborted();
+    while (true) {
+      const value = await reader.read();
+      signal?.throwIfAborted();
+      if (value.done) break;
+      size += value.value.byteLength;
+      if (size > maxBytes) {
+        void reader.cancel().catch(() => undefined);
+        throw new LlmProviderError('Provider response exceeded limit', response.status, false, provider, 'RESPONSE_BOUND');
+      }
+      chunks.push(value.value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  } finally { signal?.removeEventListener('abort', abort); reader.releaseLock(); }
 }
 
 /**

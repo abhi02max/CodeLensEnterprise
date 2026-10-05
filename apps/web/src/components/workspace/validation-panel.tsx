@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { ValidationStaticPanel } from './validation-static-panel';
 import { ValidationMlPanel } from './validation-ml-panel';
+import { ValidationAiPanel } from './validation-ai-panel';
 
 const comparisons: Record<string, string> = {
   BOTH_PASS: 'Original and patched candidate passed the check.',
@@ -161,6 +162,7 @@ export function ValidationPanel({ application }: { application: PatchApplication
                 Cancel validation
               </Button>
             )}
+            <ValidationAiPanel validationId={v.id} eligible={v.state==='COMPLETED'&&v.cleanup==='DISPOSED'}/>
           </li>
         ))}
       </ul>

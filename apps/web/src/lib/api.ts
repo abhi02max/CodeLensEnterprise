@@ -21,6 +21,7 @@ import type {
   ValidationStaticView,
   StaticFindingsQuery,
   ValidationMlView,
+  ValidationAiView,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -49,6 +50,9 @@ import type {
  * the totals drive the dashboard counts, and unwrapping them here would mean fetching twice.
  */
 export const api = {
+  validationAi: (id: string, reviewId?: string) => apiRequest<ValidationAiView | null>(`/validations/${encodeURIComponent(id)}/ai-rereview${reviewId ? `?reviewId=${encodeURIComponent(reviewId)}` : ''}`),
+  requestValidationAi: (id: string, requestId: string) => apiRequest<ValidationAiView>(`/validations/${encodeURIComponent(id)}/ai-rereview`, {method:'POST',body:{requestId}}),
+  cancelValidationAi: (id: string, reviewId: string, requestId: string) => apiRequest<ValidationAiView>(`/validations/${encodeURIComponent(id)}/ai-rereview/${encodeURIComponent(reviewId)}/cancel`, {method:'POST',body:{requestId}}),
   validationMl: (id: string) =>
     apiRequest<ValidationMlView | null>(`/validations/${encodeURIComponent(id)}/ml-assessment`),
   requestValidationMl: (id: string, requestId: string) =>

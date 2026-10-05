@@ -8,6 +8,7 @@ import { MANAGED_QUEUES } from './queue.types';
 import { PATCH_APPLICATION_QUEUE, PatchApplicationQueue } from './patch-application.queue';
 import { VALIDATION_QUEUE, ValidationQueue } from './validation.queue';
 import { VALIDATION_ML_QUEUE, ValidationMlQueue } from './validation-ml.queue';
+import { VALIDATION_AI_QUEUE, ValidationAiQueue } from './validation-ai.queue';
 
 /**
  * Producer half of the queue layer.
@@ -49,9 +50,10 @@ import { VALIDATION_ML_QUEUE, ValidationMlQueue } from './validation-ml.queue';
     BullModule.registerQueue({ name: PATCH_APPLICATION_QUEUE }),
     BullModule.registerQueue({ name: VALIDATION_QUEUE }),
     BullModule.registerQueue({ name: VALIDATION_ML_QUEUE }),
+    BullModule.registerQueue({ name: VALIDATION_AI_QUEUE }),
   ],
   controllers: [JobsController],
-  providers: [QueueService, PatchApplicationQueue, ValidationQueue, ValidationMlQueue],
-  exports: [QueueService, PatchApplicationQueue, ValidationQueue, ValidationMlQueue],
+  providers: [QueueService, PatchApplicationQueue, ValidationQueue, ValidationMlQueue, ValidationAiQueue],
+  exports: [QueueService, PatchApplicationQueue, ValidationQueue, ValidationMlQueue, ValidationAiQueue],
 })
 export class QueuesModule {}

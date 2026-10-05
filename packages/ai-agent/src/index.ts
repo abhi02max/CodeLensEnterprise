@@ -44,3 +44,4 @@ export {
   type AiFailureKind,
 } from './ai-errors';
 export * from './collaborator';
+export * from './validation-ai';

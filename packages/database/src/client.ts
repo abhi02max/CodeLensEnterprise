@@ -61,6 +61,9 @@ export const TENANT_SCOPED_MODELS = [
   'ValidationFinding',
   'ValidationMlComparison',
   'ValidationMlAssessment',
+  'ValidationAiReview',
+  'ValidationAiReviewAttempt',
+  'ValidationAiEvidenceReference',
 ] as const;
 
 const TENANT_MODEL_SET: ReadonlySet<string> = new Set(TENANT_SCOPED_MODELS);

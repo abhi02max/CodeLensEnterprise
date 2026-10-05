@@ -247,6 +247,8 @@ export interface LlmCompletion {
   model: string;
   finishReason: string;
   costCents: number;
+  /** Absent usage is unknown, not actual zero usage. Legacy consumers retain their defaults. */
+  usageReported?: boolean;
 }
 
 export interface LlmProvider {
@@ -260,5 +262,7 @@ export interface LlmProvider {
     signal?: AbortSignal;
     /** Disable adapter retries when a caller reserves each transport request itself. */
     retryAttempts?: number;
+    /** Opt-in bound covering successful and error HTTP response bodies. */
+    maxResponseBytes?: number;
   }): Promise<LlmCompletion>;
 }
