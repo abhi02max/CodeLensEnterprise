@@ -7,6 +7,7 @@ import { QueueService } from './queue.service';
 import { MANAGED_QUEUES } from './queue.types';
 import { PATCH_APPLICATION_QUEUE, PatchApplicationQueue } from './patch-application.queue';
 import { VALIDATION_QUEUE, ValidationQueue } from './validation.queue';
+import { VALIDATION_ML_QUEUE, ValidationMlQueue } from './validation-ml.queue';
 
 /**
  * Producer half of the queue layer.
@@ -47,9 +48,10 @@ import { VALIDATION_QUEUE, ValidationQueue } from './validation.queue';
     ...MANAGED_QUEUES.map((name) => BullModule.registerQueue({ name })),
     BullModule.registerQueue({ name: PATCH_APPLICATION_QUEUE }),
     BullModule.registerQueue({ name: VALIDATION_QUEUE }),
+    BullModule.registerQueue({ name: VALIDATION_ML_QUEUE }),
   ],
   controllers: [JobsController],
-  providers: [QueueService, PatchApplicationQueue, ValidationQueue],
-  exports: [QueueService, PatchApplicationQueue, ValidationQueue],
+  providers: [QueueService, PatchApplicationQueue, ValidationQueue, ValidationMlQueue],
+  exports: [QueueService, PatchApplicationQueue, ValidationQueue, ValidationMlQueue],
 })
 export class QueuesModule {}

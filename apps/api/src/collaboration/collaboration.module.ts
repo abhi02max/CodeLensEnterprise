@@ -12,6 +12,8 @@ import { PatchApplicationController } from './patch-application.controller';
 import { PatchApplicationService } from './patch-application.service';
 import { ValidationController } from './validation.controller';
 import { ValidationService } from './validation.service';
+import { ValidationMlService } from './validation-ml.service';
+import { ValidationMlController } from './validation-ml.controller';
 
 @Module({
   controllers: [
@@ -20,6 +22,7 @@ import { ValidationService } from './validation.service';
     PatchProposalController,
     PatchApplicationController,
     ValidationController,
+    ValidationMlController,
   ],
   providers: [
     CollaborationService,
@@ -30,7 +33,13 @@ import { ValidationService } from './validation.service';
     PatchProposalService,
     PatchApplicationService,
     ValidationService,
+    ValidationMlService,
   ],
-  exports: [CollaborationExecutionService, PatchApplicationService, ValidationService],
+  exports: [
+    CollaborationExecutionService,
+    PatchApplicationService,
+    ValidationService,
+    ValidationMlService,
+  ],
 })
 export class CollaborationModule {}

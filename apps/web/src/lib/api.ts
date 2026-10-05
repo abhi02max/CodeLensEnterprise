@@ -20,6 +20,7 @@ import type {
   ValidationRequest,
   ValidationStaticView,
   StaticFindingsQuery,
+  ValidationMlView,
 } from '@codelens/shared';
 import type {
   AuditLogView,
@@ -48,6 +49,18 @@ import type {
  * the totals drive the dashboard counts, and unwrapping them here would mean fetching twice.
  */
 export const api = {
+  validationMl: (id: string) =>
+    apiRequest<ValidationMlView | null>(`/validations/${encodeURIComponent(id)}/ml-assessment`),
+  requestValidationMl: (id: string, requestId: string) =>
+    apiRequest<ValidationMlView>(`/validations/${encodeURIComponent(id)}/ml-assessment`, {
+      method: 'POST',
+      body: { requestId },
+    }),
+  cancelValidationMl: (id: string, comparisonId: string, requestId: string) =>
+    apiRequest<ValidationMlView>(
+      `/validations/${encodeURIComponent(id)}/ml-assessment/${encodeURIComponent(comparisonId)}/cancel`,
+      { method: 'POST', body: { requestId } },
+    ),
   validations: (applicationId: string, afterId?: string) =>
     apiRequest<{ items: ValidationView[]; nextAfterId: string | null }>(
       `/patch-applications/${encodeURIComponent(applicationId)}/validations${afterId ? `?afterId=${encodeURIComponent(afterId)}` : ''}`,

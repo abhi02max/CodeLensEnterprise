@@ -5,6 +5,7 @@ export * from './repository';
 export * from './analysis';
 export * from './ml';
 export * from './ml-strict';
+export * from './validation-ml';
 export * from './rag';
 export * from './ai-review';
 export * from './collaboration';

@@ -9,6 +9,7 @@ import { CollaborationModule } from '../collaboration/collaboration.module';
 import { CollaborationProcessor } from './processors/collaboration.processor';
 import { PatchApplicationProcessor } from './processors/patch-application.processor';
 import { ValidationProcessor } from './processors/validation.processor';
+import { ValidationMlProcessor } from './processors/validation-ml.processor';
 
 /**
  * Consumer half of the queue layer.
@@ -30,6 +31,7 @@ import { ValidationProcessor } from './processors/validation.processor';
     CollaborationProcessor,
     PatchApplicationProcessor,
     ValidationProcessor,
+    ValidationMlProcessor,
   ],
 })
 export class WorkersModule {}
