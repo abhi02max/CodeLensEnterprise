@@ -11,7 +11,6 @@ import {
   ToolSideEffect,
   isAnalyzable,
   redactSecrets,
-  riskLevelFromScore,
   roleAtLeast,
   toErrorMessage,
   type McpTool,
@@ -683,7 +682,7 @@ export class ToolsFactory {
             // A saturation or low-confidence warning is a degraded prediction, not a clean one.
             status: warnings.length > 0 ? ('DEGRADED' as const) : ('OK' as const),
             riskScore: prediction.risk_score,
-            riskLevel: riskLevelFromScore(prediction.risk_score),
+            riskLevel: prediction.risk_level,
             probability: prediction.probability,
             confidence: prediction.confidence,
             isBaseline: prediction.is_baseline,

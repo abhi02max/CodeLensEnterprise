@@ -13,6 +13,7 @@ caller's side.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -40,6 +41,8 @@ from app.schemas import (
     SimilarPrsRequest,
     SimilarPrsResponse,
 )
+from app.strict_risk_http import engine as strict_risk_engine
+from app.strict_risk_http import router as strict_risk_router
 
 settings = get_settings()
 
@@ -77,6 +80,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.include_router(strict_risk_router)
 
 # The API is the only intended caller. CORS stays closed rather than permissive:
 # this service has no authentication of its own and is expected to run on a private
@@ -302,7 +306,10 @@ async def embeddings(request: EmbeddingsRequest) -> EmbeddingsResponse:
 @app.post("/models/reload", tags=["meta"])
 async def reload_models() -> dict[str, object]:
     """Reload artifacts from disk after a retrain, without restarting the service."""
+    if os.getenv("ML_ENABLE_OPERATOR_RELOAD", "false").lower() != "true":
+        raise HTTPException(status_code=403, detail="OPERATOR_RELOAD_DISABLED")
     registry.load()
+    strict_risk_engine.reload()
     return {
         "reloaded": registry.ready,
         "detail": registry.load_error,

@@ -31,6 +31,7 @@ COPY scripts ./scripts
 # The artifacts directory is also a volume mount point in docker-compose, so a
 # retrain from the host replaces these without rebuilding.
 RUN mkdir -p artifacts && python scripts/train.py --samples 6000 --seed 42
+RUN python scripts/manifest_artifact.py artifacts/models.joblib --trusted-operator-artifact
 
 # Verify the artifacts are actually loadable before the image is considered good.
 # Catches a serialization mismatch at build time rather than in production.

@@ -70,8 +70,7 @@ services:
       ENABLE_LOCAL_EMBEDDINGS: ${ENABLE_LOCAL_EMBEDDINGS:-false}
       LOCAL_EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
       SHAP_BACKGROUND_SIZE: ${SHAP_BACKGROUND_SIZE:-100}
-    ports:
-      - '${ML_SERVICE_PORT:-8000}:8000'
+    expose: ['8000']
     volumes:
       # Deliberately NOT mounting a volume over /app/artifacts. The shared model
       # bundle is baked into the image at build time, and a named volume over that

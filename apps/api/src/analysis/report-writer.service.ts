@@ -4,7 +4,6 @@ import {
   SEVERITY_RANK,
   Severity,
   formatMinutes,
-  riskLevelFromScore,
   severityAtLeast,
   type PostGithubCommentInput,
 } from '@codelens/shared';
@@ -60,7 +59,7 @@ export class ReportWriter {
 
     const findings = (state.staticAnalysis?.results ?? []).flatMap((result) => result.findings);
     const riskScore = state.prediction?.response.risk_score ?? null;
-    const riskLevel = riskScore !== null ? riskLevelFromScore(riskScore) : null;
+    const riskLevel = state.prediction?.response.risk_level ?? null;
 
     // Context is written outside the transaction because it can be thousands of rows and is
     // regenerable; holding a transaction open for it would lock for longer than warranted.
@@ -282,7 +281,7 @@ export class ReportWriter {
     // ---- risk
     if (options.includeRiskScore && state.prediction) {
       const prediction = state.prediction;
-      const level = riskLevelFromScore(prediction.response.risk_score);
+      const level = prediction.response.risk_level;
 
       lines.push(
         `**Risk ${Math.round(prediction.response.risk_score)}/100 (${level})**` +

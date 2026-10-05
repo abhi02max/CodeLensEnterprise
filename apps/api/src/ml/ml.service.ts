@@ -5,7 +5,7 @@ import {
   PredictReviewTimeResponseSchema,
   PredictRiskResponseSchema,
   SimilarPrsResponseSchema,
-  riskLevelFromScore,
+  authoritativeRiskBand,
   type ClusterIssuesResponse,
   type IssueCluster,
   type PredictReviewTimeResponse,
@@ -13,7 +13,9 @@ import {
   type PrFeatures,
   type RiskReason,
   type SimilarPr,
+  type StrictRiskPairRequest,
 } from '@codelens/shared';
+import { requestStrictRiskPair } from './strict-risk-client';
 import { UpstreamUnavailableError } from '../common/errors';
 import { AppConfigService } from '../config/app-config.service';
 
@@ -52,6 +54,15 @@ export class MlService {
     return this.config.ml.url;
   }
 
+  predictRiskPair(input: StrictRiskPairRequest, expectedArtifactDigest?: string) {
+    return requestStrictRiskPair(
+      this.baseUrl,
+      input,
+      this.config.ml.timeoutMs,
+      expectedArtifactDigest,
+    );
+  }
+
   private get circuitOpen(): boolean {
     return Date.now() < this.circuitOpenUntil;
   }
@@ -79,22 +90,16 @@ export class MlService {
 
     if (!result.ok) return { status: 'UNAVAILABLE', reason: result.error };
 
-    // Band the score here rather than trusting the service's own label, so the API, the
-    // web app and any future CLI all agree on what "HIGH" means. RISK_THRESHOLDS in
-    // packages/shared is the single source of truth.
-    const derivedLevel = riskLevelFromScore(result.value.risk_score);
-
-    if (derivedLevel !== result.value.risk_level) {
-      this.logger.warn(
-        `ML service returned risk_level=${result.value.risk_level} for score ` +
-          `${result.value.risk_score}, but the shared thresholds give ${derivedLevel}. ` +
-          `Using ${derivedLevel}. Check that RISK_THRESHOLDS matches the service.`,
-      );
-    }
+    // Validate the authoritative service band; never undo its low-confidence cap.
+    if (
+      authoritativeRiskBand(result.value.risk_score, result.value.confidence) !==
+      result.value.risk_level
+    )
+      return { status: 'UNAVAILABLE', reason: 'ML_BAND_POLICY_MISMATCH' };
 
     return {
       status: 'OK',
-      prediction: { ...result.value, risk_level: derivedLevel },
+      prediction: result.value,
     };
   }
 
