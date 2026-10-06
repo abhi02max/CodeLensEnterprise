@@ -102,6 +102,7 @@ export interface RepositoryView {
 
 export interface PullRequestListItem {
   id: string;
+  repository: { id: string; fullName: string };
   number: number;
   title: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED' | 'DRAFT';

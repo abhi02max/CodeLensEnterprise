@@ -32,7 +32,7 @@ export class PullRequestsService {
 
   async list(
     organizationId: string,
-    query: ListPullRequestsQuery & { repositoryId?: string },
+    query: ListPullRequestsQuery,
   ): Promise<Paginated<PullRequestListItem>> {
     const where: Prisma.PullRequestWhereInput = {
       organizationId,
@@ -310,6 +310,7 @@ export class PullRequestsService {
 }
 
 const PR_LIST_INCLUDE = {
+  repository: { select: { id: true, fullName: true } },
   reviews: { select: { verdict: true, headSha: true } },
   runs: {
     orderBy: { createdAt: 'desc' as const },
@@ -336,6 +337,7 @@ function toListItem(row: PullRequestWithRelations): PullRequestListItem {
 
   return {
     id: row.id,
+    repository: { id: row.repository.id, fullName: row.repository.fullName },
     number: row.number,
     title: row.title,
     state: row.state as PullRequestState,

@@ -76,6 +76,7 @@ export const ReindexRepositorySchema = z.object({
 export const PullRequestStateSchema = z.nativeEnum(PullRequestState);
 
 export const ListPullRequestsQuerySchema = PaginationQuerySchema.extend({
+  repositoryId: IdSchema.optional(),
   state: PullRequestStateSchema.optional(),
   authorLogin: z.string().max(120).optional(),
   riskLevel: z.nativeEnum(RiskLevel).optional(),
@@ -96,6 +97,7 @@ export interface PullRequestAuthor {
 
 export interface PullRequestListItem {
   id: string;
+  repository: { id: string; fullName: string };
   number: number;
   title: string;
   state: PullRequestState;
