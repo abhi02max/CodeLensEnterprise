@@ -5,6 +5,78 @@
 @layer base {
   :root {
     color-scheme: light;
+    --cl-canvas: 250 250 250;
+    --cl-surface: 255 255 255;
+    --cl-surface-subtle: 250 250 250;
+    --cl-surface-muted: 244 244 245;
+    --cl-surface-raised: 255 255 255;
+    --cl-selected: 240 253 250;
+    --cl-selected-hover: 204 251 241;
+    --cl-selected-text: 17 94 89;
+    --cl-text-primary: 24 24 27;
+    --cl-text-secondary: 63 63 70;
+    --cl-text-muted: 82 82 91;
+    --cl-text-disabled: 113 113 122;
+    --cl-text-inverse: 255 255 255;
+    --cl-border: 212 212 216;
+    --cl-border-strong: 113 113 122;
+    --cl-divider: 228 228 231;
+    --cl-interactive: 39 39 42;
+    --cl-interactive-hover: 63 63 70;
+    --cl-focus: 29 78 216;
+    --cl-success-text: 22 101 52;
+    --cl-success-bg: 240 253 244;
+    --cl-success-border: 134 239 172;
+    --cl-success-solid: 21 128 61;
+    --cl-success-hover: 22 101 52;
+    --cl-warning-text: 133 77 14;
+    --cl-warning-bg: 255 251 235;
+    --cl-warning-border: 252 211 77;
+    --cl-danger-text: 153 27 27;
+    --cl-danger-bg: 254 242 242;
+    --cl-danger-border: 252 165 165;
+    --cl-danger-solid: 185 28 28;
+    --cl-danger-hover: 153 27 27;
+    --cl-info-text: 7 89 133;
+    --cl-info-bg: 240 249 255;
+    --cl-info-border: 125 211 252;
+    --cl-unavailable-text: 82 82 91;
+    --cl-unavailable-bg: 244 244 245;
+    --cl-unavailable-border: 212 212 216;
+    --cl-uncertain-text: 133 77 14;
+    --cl-uncertain-bg: 255 251 235;
+    --cl-uncertain-border: 252 211 77;
+    --cl-critical-text: 153 27 27;
+    --cl-critical-bg: 254 242 242;
+    --cl-critical-border: 252 165 165;
+    --cl-high-text: 154 52 18;
+    --cl-high-bg: 255 247 237;
+    --cl-high-border: 253 186 116;
+    --cl-medium-text: 133 77 14;
+    --cl-medium-bg: 255 251 235;
+    --cl-medium-border: 252 211 77;
+    --cl-low-text: 82 82 91;
+    --cl-low-bg: 244 244 245;
+    --cl-low-border: 212 212 216;
+    --cl-diff-add-bg: 240 253 244;
+    --cl-diff-add-text: 22 101 52;
+    --cl-diff-delete-bg: 254 242 242;
+    --cl-diff-delete-text: 153 27 27;
+    --cl-diff-modified: 255 251 235;
+    --cl-diff-selected: 240 253 250;
+    --cl-diff-line-number: 82 82 91;
+    --cl-diff-border: 212 212 216;
+    --cl-space-1: 4px;
+    --cl-space-2: 8px;
+    --cl-space-3: 12px;
+    --cl-space-4: 16px;
+    --cl-space-6: 24px;
+    --cl-space-8: 32px;
+    --cl-row-compact: 36px;
+    --cl-row-comfortable: 44px;
+    --cl-radius-control: 4px;
+    --cl-radius-overlay: 6px;
+    --cl-radius-frame: 8px;
   }
 
   html,
@@ -13,7 +85,7 @@
   }
 
   body {
-    @apply bg-surface-subtle text-slate-900 antialiased;
+    @apply bg-canvas text-content-primary text-body antialiased;
   }
 
   /*
@@ -24,11 +96,24 @@
    * rather than a cosmetic one.
    */
   :focus-visible {
-    @apply outline-none ring-2 ring-slate-900 ring-offset-2 ring-offset-white;
+    outline: 2px solid rgb(var(--cl-focus));
+    outline-offset: 2px;
   }
 
   ::selection {
-    @apply bg-slate-900 text-white;
+    @apply bg-interactive text-content-inverse;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .animate-pulse {
+    animation: none;
+  }
+
+  .transition-colors,
+  .transition-all {
+    transition: none;
   }
 }
 

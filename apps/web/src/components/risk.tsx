@@ -1,19 +1,19 @@
+import * as React from 'react';
 import { cn } from '@/lib/cn';
 import type { RiskLevel, Severity } from '@/lib/types';
+import { SeverityLabel, StatusLabel, type StatusTone } from './ui/primitives';
 
 /**
- * Risk and severity are the only things in the UI allowed to use colour.
- *
  * Colour is also never the sole carrier: every badge states its level in text. A reviewer with a
  * red/green deficiency, or anyone scanning a dense list, reads the word — the colour only speeds
  * up someone who already knows the scale.
  */
 
 const RISK_STYLES: Record<RiskLevel, string> = {
-  LOW: 'border-green-200 bg-green-50 text-risk-low',
-  MEDIUM: 'border-amber-200 bg-amber-50 text-risk-medium',
-  HIGH: 'border-orange-200 bg-orange-50 text-risk-high',
-  CRITICAL: 'border-red-200 bg-red-50 text-risk-critical',
+  LOW: 'border-state-success-border bg-state-success-bg text-risk-low',
+  MEDIUM: 'border-severity-medium-border bg-severity-medium-bg text-risk-medium',
+  HIGH: 'border-severity-high-border bg-severity-high-bg text-risk-high',
+  CRITICAL: 'border-severity-critical-border bg-severity-critical-bg text-risk-critical',
 };
 
 export function RiskBadge({
@@ -28,7 +28,7 @@ export function RiskBadge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs font-semibold',
+        'inline-flex max-w-full items-center gap-1.5 rounded-control border px-1.5 py-0.5 text-metadata font-semibold',
         RISK_STYLES[level],
         className,
       )}
@@ -70,45 +70,21 @@ export function RiskMeter({ score, level }: { score: number; level: RiskLevel })
   );
 }
 
-const SEVERITY_STYLES: Record<Severity, string> = {
-  CRITICAL: 'border-red-200 bg-red-50 text-risk-critical',
-  HIGH: 'border-orange-200 bg-orange-50 text-risk-high',
-  MEDIUM: 'border-amber-200 bg-amber-50 text-risk-medium',
-  LOW: 'border-slate-200 bg-surface-muted text-slate-600',
-  INFO: 'border-slate-200 bg-surface-muted text-slate-500',
-};
-
 export function SeverityBadge({ severity }: { severity: Severity }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wide',
-        SEVERITY_STYLES[severity],
-      )}
-    >
-      {severity}
-    </span>
-  );
+  return <SeverityLabel severity={severity} />;
 }
 
 export const SEVERITY_ORDER: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'];
 
 /** Run status, using the same restraint: text first, colour as a hint. */
 export function RunStatusBadge({ status }: { status: string }) {
-  const tone =
-    status === 'COMPLETED'
-      ? 'border-green-200 bg-green-50 text-green-800'
-      : status === 'PARTIAL'
-        ? 'border-amber-200 bg-amber-50 text-amber-800'
-        : status === 'FAILED'
-          ? 'border-red-200 bg-red-50 text-red-800'
-          : status === 'RUNNING'
-            ? 'border-sky-200 bg-sky-50 text-sky-800'
-            : 'border-surface-border bg-surface-muted text-slate-600';
-
-  return (
-    <span className={cn('inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium', tone)}>
-      {status}
-    </span>
-  );
+  const tones: Record<string, StatusTone> = {
+    COMPLETED: 'info',
+    RUNNING: 'info',
+    PARTIAL: 'warning',
+    FAILED: 'danger',
+    UNAVAILABLE: 'unavailable',
+    UNCERTAIN: 'uncertain',
+  };
+  return <StatusLabel label={status} tone={tones[status] ?? 'neutral'} />;
 }

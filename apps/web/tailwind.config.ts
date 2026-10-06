@@ -1,31 +1,84 @@
 import type { Config } from 'tailwindcss';
 
-/**
- * Restrained palette on purpose.
- *
- * This is a tool people keep open next to an editor all day, so the neutral scale carries the
- * layout and colour is reserved for one job: risk and severity. If buttons, links and headings
- * were also coloured, a CRITICAL badge would have to compete for attention with chrome, and the
- * one thing the product exists to communicate would stop standing out.
- */
+const color = (role: string) => `rgb(var(--cl-${role}) / <alpha-value>)`;
+const state = (role: string) => ({
+  text: color(`${role}-text`),
+  bg: color(`${role}-bg`),
+  border: color(`${role}-border`),
+});
+
 const config: Config = {
   darkMode: 'class',
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        // Slate-based neutrals, referenced by name so a later theme swap is one file.
+        canvas: color('canvas'),
         surface: {
-          DEFAULT: '#ffffff',
-          subtle: '#f8fafc',
-          muted: '#f1f5f9',
-          border: '#e2e8f0',
+          DEFAULT: color('surface'),
+          subtle: color('surface-subtle'),
+          muted: color('surface-muted'),
+          raised: color('surface-raised'),
+          selected: color('selected'),
+          border: color('border'),
         },
+        content: {
+          primary: color('text-primary'),
+          secondary: color('text-secondary'),
+          muted: color('text-muted'),
+          disabled: color('text-disabled'),
+          inverse: color('text-inverse'),
+        },
+        structure: {
+          DEFAULT: color('border'),
+          strong: color('border-strong'),
+          divider: color('divider'),
+        },
+        interactive: { DEFAULT: color('interactive'), hover: color('interactive-hover') },
+        selected: {
+          DEFAULT: color('selected'),
+          hover: color('selected-hover'),
+          text: color('selected-text'),
+        },
+        focus: color('focus'),
+        state: {
+          success: {
+            ...state('success'),
+            solid: color('success-solid'),
+            hover: color('success-hover'),
+          },
+          warning: state('warning'),
+          danger: {
+            ...state('danger'),
+            solid: color('danger-solid'),
+            hover: color('danger-hover'),
+          },
+          info: state('info'),
+          unavailable: state('unavailable'),
+          uncertain: state('uncertain'),
+        },
+        severity: {
+          critical: state('critical'),
+          high: state('high'),
+          medium: state('medium'),
+          low: state('low'),
+        },
+        diff: {
+          'add-bg': color('diff-add-bg'),
+          'add-text': color('diff-add-text'),
+          'delete-bg': color('diff-delete-bg'),
+          'delete-text': color('diff-delete-text'),
+          modified: color('diff-modified'),
+          selected: color('diff-selected'),
+          'line-number': color('diff-line-number'),
+          border: color('diff-border'),
+        },
+        // Compatibility aliases; risk remains a separate domain from execution status.
         risk: {
-          low: '#15803d',
-          medium: '#a16207',
-          high: '#c2410c',
-          critical: '#b91c1c',
+          low: color('success-solid'),
+          medium: color('medium-text'),
+          high: color('high-text'),
+          critical: color('danger-solid'),
         },
       },
       fontFamily: {
@@ -56,6 +109,26 @@ const config: Config = {
         base: ['0.875rem', { lineHeight: '1.375rem' }],
         lg: ['1rem', { lineHeight: '1.5rem' }],
         xl: ['1.125rem', { lineHeight: '1.625rem' }],
+        page: ['1.5rem', { lineHeight: '1.875rem' }],
+        section: ['1.125rem', { lineHeight: '1.625rem' }],
+        panel: ['0.875rem', { lineHeight: '1.25rem' }],
+        body: ['0.875rem', { lineHeight: '1.375rem' }],
+        compact: ['0.8125rem', { lineHeight: '1.25rem' }],
+        metadata: ['0.75rem', { lineHeight: '1.125rem' }],
+        label: ['0.8125rem', { lineHeight: '1.125rem' }],
+        code: ['0.8125rem', { lineHeight: '1.25rem' }],
+      },
+      spacing: {
+        'control-x': 'var(--cl-space-3)',
+        'section-x': 'var(--cl-space-4)',
+        'section-y': 'var(--cl-space-3)',
+        'row-compact': 'var(--cl-row-compact)',
+        'row-comfortable': 'var(--cl-row-comfortable)',
+      },
+      borderRadius: {
+        control: 'var(--cl-radius-control)',
+        overlay: 'var(--cl-radius-overlay)',
+        frame: 'var(--cl-radius-frame)',
       },
     },
   },
