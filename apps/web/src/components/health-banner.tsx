@@ -32,15 +32,21 @@ export function HealthBanner() {
       role="status"
       className={
         isOutage
-          ? 'border-b border-red-200 bg-red-50 px-4 py-2'
-          : 'border-b border-amber-200 bg-amber-50 px-4 py-2'
+          ? 'border-b border-state-danger-border bg-state-danger-bg px-4 py-2'
+          : 'border-b border-state-warning-border bg-state-warning-bg px-4 py-2'
       }
     >
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
-        <span className={isOutage ? 'font-semibold text-red-900' : 'font-semibold text-amber-900'}>
+        <span
+          className={
+            isOutage
+              ? 'font-semibold text-state-danger-text'
+              : 'font-semibold text-state-warning-text'
+          }
+        >
           {isOutage ? 'Service outage' : 'Running degraded'}
         </span>
-        <span className={isOutage ? 'text-red-800' : 'text-amber-800'}>
+        <span className={isOutage ? 'text-state-danger-text' : 'text-state-warning-text'}>
           {(isOutage ? down : degraded)
             .map((check) => `${check.name}: ${check.detail ?? 'unavailable'}`)
             .join(' · ')}

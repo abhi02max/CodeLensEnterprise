@@ -2,21 +2,26 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Github } from 'lucide-react';
+import { ArrowRight, Github, RefreshCw } from 'lucide-react';
 import * as React from 'react';
 import {
-  Alert,
   Badge,
   Button,
   Card,
   CardHeader,
   EmptyState,
+  LoadingRegion,
+  PageHeader,
   Skeleton,
+  StatusLabel,
 } from '@/components/ui/primitives';
+import { ListPagination } from '@/components/list-pagination';
+import { ListError } from '@/components/reviews/review-list';
 import { api } from '@/lib/api';
 import { ApiError, API_URL } from '@/lib/api-client';
 import { useSession } from '@/lib/providers';
 import { relativeTime } from '@/lib/format';
+import { reviewsHref } from '@/lib/review-inbox';
 import { useJobPolling } from '@/lib/use-job-polling';
 
 const INDEX_TONE = {
@@ -31,159 +36,157 @@ const INDEX_TONE = {
 export default function RepositoriesPage() {
   const { user } = useSession();
   const queryClient = useQueryClient();
-  const repos = useQuery({ queryKey: ['repositories'], queryFn: () => api.repositories(1, 100) });
-
+  const [page, setPage] = React.useState(1);
+  const repos = useQuery({
+    queryKey: ['repositories', 'list', page],
+    queryFn: () => api.repositories(page, 25),
+  });
   const [jobHandle, setJobHandle] = React.useState<string | null>(null);
   const [error, setError] = React.useState<ApiError | null>(null);
-
   const job = useJobPolling(jobHandle, {
     onSettled: () => void queryClient.invalidateQueries({ queryKey: ['repositories'] }),
   });
-
   const sync = useMutation({
     mutationFn: () => api.syncRepositories(),
     onMutate: () => setError(null),
     onSuccess: (result) => setJobHandle(result.job.id),
     onError: (caught) => setError(caught as ApiError),
   });
-
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Repositories</h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Connected repositories and their retrieval index state.
-          </p>
-        </div>
-        {!user?.githubConnected && <Button onClick={() => window.location.assign(`${API_URL}/auth/github?mode=link`)}><Github className="h-4 w-4" aria-hidden="true" />Connect GitHub</Button>}
-        <Button
-          variant="primary"
-          onClick={() => jobHandle && (job.isError || job.isTimedOut) ? void job.checkStatus() : sync.mutate()}
-          loading={sync.isPending || job.isRunning}
-        >
-          {job.isRunning ? 'Syncing…' : job.isError || job.isTimedOut ? 'Check sync status' : 'Sync from GitHub'}
-        </Button>
-      </div>
-
+      <PageHeader
+        title="Repositories"
+        subtitle="Connected source and repository reviews."
+        actions={
+          <>
+            {!user?.githubConnected && (
+              <Button onClick={() => window.location.assign(`${API_URL}/auth/github?mode=link`)}>
+                <Github className="h-4 w-4" aria-hidden="true" />
+                Connect GitHub
+              </Button>
+            )}
+            <Button
+              onClick={() =>
+                jobHandle && (job.isError || job.isTimedOut)
+                  ? void job.checkStatus()
+                  : sync.mutate()
+              }
+              loading={sync.isPending || job.isRunning}
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              {job.isRunning
+                ? 'Syncing…'
+                : job.isError || job.isTimedOut
+                  ? 'Check sync status'
+                  : 'Sync from GitHub'}
+            </Button>
+          </>
+        }
+      />
       {error && (
-        <Alert title="Could not queue the sync" tone={error.code === 'NETWORK_ERROR' ? 'warning' : 'danger'}>
-          {error.message}
-        </Alert>
+        <div role="alert" className="text-state-danger-text">
+          <p>Could not queue the sync</p>
+          <p>{error.message}</p>
+        </div>
       )}
-
-      {/*
-        The job panel is shown for a queued sync rather than a spinner, because the work happens in
-        a worker process and the only honest thing to show is the job's own state.
-      */}
       {jobHandle && <JobPanel handle={jobHandle} state={job} />}
-
-      <Card>
-        <CardHeader
-          title="Connected"
-          subtitle={repos.data ? `${repos.data.total} repositor${repos.data.total === 1 ? 'y' : 'ies'}` : 'Loading'}
-        />
-
-        {repos.isLoading ? (
-          <div className="space-y-2 px-4 py-3">
+      {repos.isError ? (
+        <ListError subject="repositories" onRetry={() => void repos.refetch()} />
+      ) : repos.isPending ? (
+        <LoadingRegion label="Loading repositories">
+          <div className="mt-4 space-y-4">
             {[0, 1, 2].map((key) => (
-              <Skeleton key={key} className="h-10 w-full" />
+              <Skeleton key={key} className="h-20 w-full" />
             ))}
           </div>
-        ) : repos.data && repos.data.items.length === 0 ? (
-          <EmptyState
-            title="No repositories connected"
-            description="Connect a GitHub repository through the API, or run the seed script to load the demo workspace."
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="whitespace-nowrap border-b border-surface-border text-left text-xs text-slate-500">
-                  {/* Same reasoning as the pull request table: index state and open-PR count are
-                      what a narrow screen needs; branch and language are reference detail. The
-                      `whitespace-nowrap` here and on the cells below is required by the title
-                      column's `w-full max-w-0`, which leaves every other column at min-content. */}
-                  <th scope="col" className="px-4 py-2 font-medium">Repository</th>
-                  <th scope="col" className="hidden px-3 py-2 font-medium md:table-cell">Visibility</th>
-                  <th scope="col" className="hidden px-3 py-2 font-medium xl:table-cell">Default branch</th>
-                  <th scope="col" className="hidden px-3 py-2 font-medium lg:table-cell">Language</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Index</th>
-                  <th scope="col" className="px-3 py-2 font-medium">Open PRs</th>
-                  <th scope="col" className="hidden px-4 py-2 font-medium md:table-cell">Last sync</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-surface-border">
-                {repos.data?.items.map((repo) => (
-                  <tr key={repo.id} className="hover:bg-surface-subtle">
-                    {/* `w-full max-w-0` for the same reason as the pull request table: it lets this
-                        column absorb the leftover width instead of demanding `max-w-md` and pushing
-                        Index and Open PRs off a narrow screen. */}
-                    <td className="w-full max-w-0 px-4 py-2">
+        </LoadingRegion>
+      ) : (
+        repos.data && (
+          <>
+            {repos.data.items.length === 0 ? (
+              <EmptyState
+                title={page > 1 ? 'No repositories on this page' : 'No repositories connected'}
+                description={page > 1 ? undefined : 'Connect GitHub to manage repository access.'}
+                action={
+                  page > 1 ? (
+                    <Button onClick={() => setPage(1)}>Return to first page</Button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <ul
+                aria-label="Connected repositories"
+                className="divide-y divide-structure border-t border-structure"
+              >
+                {repos.data.items.map((repo) => (
+                  <li
+                    key={repo.id}
+                    className="grid min-w-0 gap-3 py-4 md:grid-cols-[minmax(0,1fr)_12rem_auto]"
+                  >
+                    <div className="min-w-0">
                       <Link
-                        href={`/pull-requests?repositoryId=${repo.id}`}
-                        className="block truncate font-medium text-slate-900 hover:underline"
+                        href={reviewsHref({ repositoryId: repo.id })}
+                        className="break-all text-panel font-semibold hover:underline"
                       >
                         {repo.fullName}
                       </Link>
                       {repo.description && (
-                        <p className="mt-0.5 truncate text-xs text-slate-500">
+                        <p className="mt-1 break-words text-compact text-content-muted">
                           {repo.description}
                         </p>
                       )}
-                    </td>
-                    <td className="hidden whitespace-nowrap px-3 py-2 md:table-cell">
-                      <Badge tone={repo.private ? 'neutral' : 'outline'}>
-                        {repo.private ? 'Private' : 'Public'}
-                      </Badge>
-                    </td>
-                    <td className="hidden whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600 xl:table-cell">
-                      {repo.defaultBranch}
-                    </td>
-                    <td className="hidden whitespace-nowrap px-3 py-2 text-xs text-slate-600 lg:table-cell">
-                      {repo.primaryLanguage ?? '—'}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      <Badge tone={INDEX_TONE[repo.indexStatus]}>
-                        {repo.indexStatus.replace(/_/g, ' ').toLowerCase()}
-                      </Badge>
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-metadata text-content-muted">
+                        <span>{repo.private ? 'Private' : 'Public'}</span>
+                        <span className="break-all">{repo.defaultBranch}</span>
+                        {repo.primaryLanguage && <span>{repo.primaryLanguage}</span>}
+                        <span>{repo.openPullRequestCount} open PRs</span>
+                        <span>Synced {relativeTime(repo.lastSyncedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <StatusLabel
+                        label={repo.indexStatus.replace(/_/g, ' ').toLowerCase()}
+                        tone={INDEX_TONE[repo.indexStatus]}
+                      />
                       {repo.indexStatus === 'INDEXED' && (
-                        <span className="numeric ml-1.5 text-xs text-slate-500">
-                          {repo.indexedChunkCount} chunks
-                        </span>
+                        <p className="text-metadata text-content-muted">
+                          {repo.indexedChunkCount} indexed chunks
+                        </p>
                       )}
                       {repo.indexError && (
-                        <p className="mt-0.5 max-w-xs truncate text-xs text-red-700" title={repo.indexError}>
+                        <p className="break-words text-metadata text-state-danger-text">
                           {repo.indexError}
                         </p>
                       )}
-                    </td>
-                    <td className="numeric whitespace-nowrap px-3 py-2 text-slate-800">
-                      {repo.openPullRequestCount}
-                    </td>
-                    <td className="hidden whitespace-nowrap px-4 py-2 text-xs text-slate-500 md:table-cell">
-                      {relativeTime(repo.lastSyncedAt)}
-                    </td>
-                  </tr>
+                    </div>
+                    <Link
+                      href={reviewsHref({ repositoryId: repo.id })}
+                      aria-label={`View reviews for ${repo.fullName}`}
+                      className="inline-flex min-h-9 items-center gap-2 justify-self-start rounded-control px-2 py-2 text-compact font-medium text-selected-text hover:bg-selected md:justify-self-end"
+                    >
+                      View reviews
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </Link>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+              </ul>
+            )}
+            <ListPagination {...repos.data} pending={repos.isFetching} onPage={setPage} />
+          </>
+        )
+      )}
     </div>
   );
 }
 
-function JobPanel({
-  handle,
-  state,
-}: {
-  handle: string;
-  state: ReturnType<typeof useJobPolling>;
-}) {
+function JobPanel({ handle, state }: { handle: string; state: ReturnType<typeof useJobPolling> }) {
   const result = state.job?.result as
-    | { repositories?: number; totalSynced?: number; failed?: number; results?: Array<{ fullName: string; error: string | null }> }
+    | {
+        repositories?: number;
+        totalSynced?: number;
+        failed?: number;
+        results?: Array<{ fullName: string; error: string | null }>;
+      }
     | null
     | undefined;
 
@@ -194,13 +197,31 @@ function JobPanel({
       <CardHeader
         title="Sync job"
         subtitle={<span className="font-mono text-[0.6875rem]">{handle}</span>}
-        actions={<Badge tone={state.isError || state.isTimedOut || state.job?.state === 'FAILED' ? 'danger' : state.isRunning ? 'info' : 'success'}>
-          {state.isError || state.isTimedOut ? 'STATUS UNKNOWN' : state.job?.state ?? 'QUEUED'}
-        </Badge>}
+        actions={
+          <Badge
+            tone={
+              state.isError || state.isTimedOut || state.job?.state === 'FAILED'
+                ? 'danger'
+                : state.isRunning
+                  ? 'info'
+                  : 'success'
+            }
+          >
+            {state.isError || state.isTimedOut ? 'STATUS UNKNOWN' : (state.job?.state ?? 'QUEUED')}
+          </Badge>
+        }
       />
-      <div className="px-4 py-3 text-xs text-slate-600">
-        {state.isError && <p className="text-red-700">Could not check the sync job. It may still be running.</p>}
-        {state.isTimedOut && <p className="text-red-700">Sync is taking longer than expected. Check its status before starting another.</p>}
+      <div className="px-4 py-3 text-xs text-content-secondary">
+        {state.isError && (
+          <p className="text-state-danger-text">
+            Could not check the sync job. It may still be running.
+          </p>
+        )}
+        {state.isTimedOut && (
+          <p className="text-state-danger-text">
+            Sync is taking longer than expected. Check its status before starting another.
+          </p>
+        )}
         {state.job?.progress?.message && <p>{state.job.progress.message}</p>}
 
         {state.job?.state === 'COMPLETED' && result && (
@@ -218,14 +239,16 @@ function JobPanel({
         {failures.length > 0 && (
           <ul className="mt-2 space-y-1">
             {failures.map((entry) => (
-              <li key={entry.fullName} className="text-amber-800">
+              <li key={entry.fullName} className="text-state-warning-text">
                 <span className="font-medium">{entry.fullName}</span>: {entry.error}
               </li>
             ))}
           </ul>
         )}
 
-        {state.job?.failedReason && <p className="text-red-700">{state.job.failedReason}</p>}
+        {state.job?.failedReason && (
+          <p className="text-state-danger-text">{state.job.failedReason}</p>
+        )}
       </div>
     </Card>
   );

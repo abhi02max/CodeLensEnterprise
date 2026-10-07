@@ -19,11 +19,13 @@ export function AnalyzeButton({
   pullRequestId,
   size = 'md',
   label = 'Analyze',
+  variant = 'primary',
   onComplete,
 }: {
   pullRequestId: string;
   size?: 'sm' | 'md' | 'lg';
   label?: string;
+  variant?: 'primary' | 'secondary' | 'ghost';
   onComplete?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -66,36 +68,53 @@ export function AnalyzeButton({
   return (
     <div className="inline-flex flex-col items-end gap-1">
       <Button
-        variant="primary"
+        variant={variant}
         size={size}
         loading={running}
-        onClick={() => statusUnavailable ? void job.checkStatus() : trigger.mutate()}
-        title={running ? 'Analysis in progress' : statusUnavailable ? 'Check the existing job before starting another' : 'Run the full review pipeline'}
+        onClick={() => (statusUnavailable ? void job.checkStatus() : trigger.mutate())}
+        title={
+          running
+            ? 'Analysis in progress'
+            : statusUnavailable
+              ? 'Check the existing job before starting another'
+              : 'Run the full review pipeline'
+        }
       >
-        {running ? (stage && stage !== 'QUEUED' ? formatStage(stage) : 'Queued…') : statusUnavailable ? 'Check status' : label}
+        {running
+          ? stage && stage !== 'QUEUED'
+            ? formatStage(stage)
+            : 'Queued…'
+          : statusUnavailable
+            ? 'Check status'
+            : label}
       </Button>
 
       {handle && running && (
-        <span className="max-w-[16rem] truncate font-mono text-[0.625rem] text-slate-400" title={handle}>
+        <span
+          className="max-w-[16rem] truncate font-mono text-[0.625rem] text-content-muted"
+          title={handle}
+        >
           {handle}
         </span>
       )}
 
       {job.job?.state === 'FAILED' && (
-        <span className="text-xs text-red-700">
+        <span className="text-xs text-state-danger-text">
           {job.job.failedReason ?? 'The analysis job failed'}
         </span>
       )}
 
       {statusUnavailable && (
-        <span className="max-w-[16rem] text-right text-xs text-red-700">
+        <span className="max-w-[16rem] text-right text-xs text-state-danger-text">
           {job.isTimedOut
             ? 'Analysis is taking longer than expected. Check its status before starting another.'
             : 'Could not check job status. The analysis may still be running.'}
         </span>
       )}
 
-      {error && <span className="max-w-[16rem] text-right text-xs text-red-700">{error}</span>}
+      {error && (
+        <span className="max-w-[16rem] text-right text-xs text-state-danger-text">{error}</span>
+      )}
     </div>
   );
 }

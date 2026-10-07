@@ -1,4 +1,5 @@
 import { apiRequest, setAccessToken } from './api-client';
+import type { ReviewQuery } from './review-inbox';
 import type {
   ConversationDetail,
   ConversationList,
@@ -131,12 +132,15 @@ export const api = {
     }),
 
   // ---------------------------------------------------------------- pull requests
-  pullRequests: (params: { repositoryId?: string; page?: number; pageSize?: number } = {}) => {
+  pullRequests: (params: Partial<ReviewQuery> = {}) => {
     const query = new URLSearchParams({
       page: String(params.page ?? 1),
       pageSize: String(params.pageSize ?? 50),
       ...(params.repositoryId ? { repositoryId: params.repositoryId } : {}),
     });
+    for (const key of ['state', 'riskLevel', 'sortBy', 'sortOrder'] as const) {
+      if (params[key]) query.set(key, params[key]);
+    }
 
     return apiRequest<Paginated<PullRequestListItem>>(`/pull-requests?${query.toString()}`);
   },
