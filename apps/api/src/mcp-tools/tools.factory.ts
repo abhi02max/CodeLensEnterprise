@@ -17,6 +17,7 @@ import {
   type PrFeatures,
 } from '@codelens/shared';
 import { FEATURE_SCHEMA_VERSION } from '@codelens/shared';
+import { diffRevision } from '../pull-requests/diff-provenance';
 import { formatHunksForPrompt, parseUnifiedPatch, reconstructSides } from '@codelens/github';
 import {
   countPreviousRiskyFiles,
@@ -121,14 +122,18 @@ export class ToolsFactory {
       execute: async (input, ctx) => {
         const startedAt = Date.now();
 
-        const pullRequest = await this.prisma.unscoped.pullRequest.findFirst({
-          where: { id: input.pullRequestId, organizationId: ctx.organizationId },
-          include: {
-            repository: { select: { id: true, fullName: true } },
-            files: { orderBy: { filename: 'asc' } },
-            commits: { orderBy: { authoredAt: 'asc' } },
-          },
-        });
+        let pullRequest = await this.prisma.unscoped.$transaction(
+          (db) =>
+            db.pullRequest.findFirst({
+              where: { id: input.pullRequestId, organizationId: ctx.organizationId },
+              include: {
+                repository: { select: { id: true, fullName: true } },
+                files: { orderBy: { filename: 'asc' } },
+                commits: { orderBy: { authoredAt: 'asc' } },
+              },
+            }),
+          { isolationLevel: 'RepeatableRead' },
+        );
 
         if (!pullRequest) {
           throw new Error(`Pull request ${input.pullRequestId} not found in this organization`);
@@ -151,14 +156,20 @@ export class ToolsFactory {
             userId: ctx.userId,
           });
 
-          const refreshed = await this.prisma.unscoped.pullRequest.findFirstOrThrow({
-            where: { id: input.pullRequestId, organizationId: ctx.organizationId },
-            include: {
-              files: { orderBy: { filename: 'asc' } },
-              commits: { orderBy: { authoredAt: 'asc' } },
-            },
-          });
+          const refreshed = await this.prisma.unscoped.$transaction(
+            (db) =>
+              db.pullRequest.findFirstOrThrow({
+                where: { id: input.pullRequestId, organizationId: ctx.organizationId },
+                include: {
+                  repository: { select: { id: true, fullName: true } },
+                  files: { orderBy: { filename: 'asc' } },
+                  commits: { orderBy: { authoredAt: 'asc' } },
+                },
+              }),
+            { isolationLevel: 'RepeatableRead' },
+          );
 
+          pullRequest = refreshed;
           files = refreshed.files;
           commits = refreshed.commits;
           cacheHit = false;
@@ -174,6 +185,7 @@ export class ToolsFactory {
           authorLogin: pullRequest.authorLogin,
           headSha: pullRequest.headSha,
           baseSha: pullRequest.baseSha,
+          diffRevision: diffRevision(pullRequest),
           headRef: pullRequest.headRef,
           baseRef: pullRequest.baseRef,
           additions: pullRequest.additions,
@@ -189,7 +201,7 @@ export class ToolsFactory {
             deletions: file.deletions,
             patch: file.patch,
             patchTruncated: file.patchTruncated,
-            binary: file.binary,
+            binary: false,
             analyzable: isAnalyzable(file.filename),
             touchedLines: file.touchedLines,
           })),

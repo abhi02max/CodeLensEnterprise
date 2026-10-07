@@ -59,4 +59,10 @@ export class PullRequestsController {
   files(@OrgId() organizationId: string, @Param('id') id: string) {
     return this.pullRequests.getFiles(organizationId, id);
   }
+
+  @Get(':id/diff')
+  @ApiOperation({ summary: 'Stored diff with verified revision and availability information' })
+  diff(@OrgId() organizationId: string, @Param('id') id: string) {
+    return this.pullRequests.getDiff(organizationId, id);
+  }
 }

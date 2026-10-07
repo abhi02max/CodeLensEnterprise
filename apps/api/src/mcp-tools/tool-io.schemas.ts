@@ -63,6 +63,16 @@ export const GetPrDiffOutput = z.object({
   authorLogin: z.string(),
   headSha: z.string(),
   baseSha: z.string(),
+  diffRevision: z
+    .object({
+      provenance: z.enum(['VERIFIED', 'UNVERIFIED']),
+      baseSha: z.string().nullable(),
+      headSha: z.string().nullable(),
+      mergeBaseSha: z.string().nullable(),
+      fileSet: z.enum(['COMPLETE', 'PARTIAL', 'UNVERIFIED']),
+      patches: z.enum(['COMPLETE', 'PARTIAL', 'UNAVAILABLE', 'UNVERIFIED']),
+    })
+    .optional(),
   headRef: z.string(),
   baseRef: z.string(),
   additions: z.number().int(),

@@ -335,7 +335,94 @@ export class GithubClient {
       if (data.length < 100) break;
     }
 
-    return raw.slice(0, maxFiles).map((file) => {
+    return this.mapDiffFiles(raw.slice(0, maxFiles));
+  }
+
+  /** Fail closed unless the stored payload agrees with an immutable comparison. */
+  async verifyPullRequestFiles(
+    fullName: string,
+    baseSha: string,
+    headSha: string,
+    files: PullRequestFileWithDiff[],
+    commits?: CommitView[],
+  ): Promise<{ mergeBaseSha: string }> {
+    if (![baseSha, headSha].every((sha) => /^[a-f0-9]{40}$/.test(sha)))
+      throw new GithubError('VALIDATION_FAILED', 'Exact comparison revisions required', 400);
+    const { owner, repo } = this.splitFullName(fullName);
+    const { data } = await this.request('verifyPullComparison', () =>
+      this.octokit.repos.compareCommitsWithBasehead({
+        owner,
+        repo,
+        basehead: `${baseSha}...${headSha}`,
+        page: 1,
+        per_page: 100,
+      }),
+    );
+    if (data.base_commit.sha !== baseSha || !/^[a-f0-9]{40}$/.test(data.merge_base_commit.sha))
+      throw new GithubError('VALIDATION_FAILED', 'Comparison revision mismatch', 400);
+    const compared = this.mapDiffFiles((data.files ?? []).slice(0, MAX_FILES_PER_REVIEW));
+    const identity = (file: PullRequestFileWithDiff) =>
+      JSON.stringify({
+        filename: file.filename,
+        previousFilename: file.previousFilename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        changes: file.changes,
+        patch: file.patch,
+        patchTruncated: file.patchTruncated,
+      });
+    const expected = new Map(compared.map((file) => [file.filename, identity(file)]));
+    if (
+      expected.size !== compared.length ||
+      new Set(files.map((f) => f.filename)).size !== files.length ||
+      files.length !== compared.length ||
+      files.some((file) => expected.get(file.filename) !== identity(file))
+    )
+      throw new GithubError('VALIDATION_FAILED', 'PR files do not match the exact comparison', 400);
+    if (commits) {
+      const comparisonCommits = [...data.commits];
+      for (
+        let page = 2;
+        comparisonCommits.length < Math.min(data.total_commits, MAX_COMMITS_FETCHED);
+        page++
+      ) {
+        const next = await this.request('verifyPullComparisonCommits', () =>
+          this.octokit.repos.compareCommitsWithBasehead({
+            owner,
+            repo,
+            basehead: `${baseSha}...${headSha}`,
+            page,
+            per_page: 100,
+          }),
+        );
+        if (
+          next.data.base_commit.sha !== baseSha ||
+          next.data.merge_base_commit.sha !== data.merge_base_commit.sha ||
+          next.data.commits.length === 0
+        )
+          throw new GithubError('VALIDATION_FAILED', 'Incomplete exact comparison commits', 400);
+        comparisonCommits.push(...next.data.commits);
+      }
+      const shas = new Set(
+        comparisonCommits.slice(0, MAX_COMMITS_FETCHED).map((commit) => commit.sha),
+      );
+      if (
+        shas.size !== commits.length ||
+        commits.some((commit) => !shas.has(commit.sha)) ||
+        new Set(commits.map((commit) => commit.sha)).size !== commits.length
+      )
+        throw new GithubError(
+          'VALIDATION_FAILED',
+          'PR commits do not match the exact comparison',
+          400,
+        );
+    }
+    return { mergeBaseSha: data.merge_base_commit.sha };
+  }
+
+  private mapDiffFiles(raw: RawGithubFile[]): PullRequestFileWithDiff[] {
+    return raw.map((file) => {
       const analyzable = isAnalyzable(file.filename);
 
       let patch = file.patch ?? null;
@@ -401,7 +488,7 @@ export class GithubClient {
       if (data.length < 100) break;
     }
 
-    return commits;
+    return commits.slice(0, MAX_COMMITS_FETCHED);
   }
 
   // -------------------------------------------------------------- file content

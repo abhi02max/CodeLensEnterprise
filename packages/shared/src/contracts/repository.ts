@@ -144,6 +144,24 @@ export interface PullRequestDetail extends PullRequestListItem {
   labels: string[];
   files: PullRequestFileView[];
   commits: CommitView[];
+  diffRevision: PullRequestDiffRevision;
+}
+
+export interface PullRequestDiffRevision {
+  provenance: 'VERIFIED' | 'UNVERIFIED';
+  baseSha: string | null;
+  headSha: string | null;
+  mergeBaseSha: string | null;
+  fileSet: 'COMPLETE' | 'PARTIAL' | 'UNVERIFIED';
+  patches: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE' | 'UNVERIFIED';
+}
+
+export interface PullRequestFilesView {
+  pullRequestId: string;
+  baseSha: string;
+  headSha: string;
+  diffRevision: PullRequestDiffRevision;
+  files: PullRequestFileView[];
 }
 
 export interface PullRequestFileView {
@@ -156,13 +174,15 @@ export interface PullRequestFileView {
   changes: number;
   language: string;
   flags: FileFlag[];
-  /** Unified diff hunk text. Null for binary files or oversized patches. */
+  /** Bounded unified hunks; null may mean remote omission or local policy omission. */
   patch: string | null;
-  /** True when the patch was dropped for exceeding the size cap. */
+  /** True when only a locally bounded prefix was retained. */
   patchTruncated: boolean;
+  /** Legacy compatibility flag; false does not establish that content is text. */
   binary: boolean;
   /** Static findings attached to this file in the latest run. */
   findingCount: number;
+  patchAvailability: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE' | 'UNVERIFIED';
 }
 
 export interface CommitView {

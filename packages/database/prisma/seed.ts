@@ -423,7 +423,14 @@ async function main(): Promise<void> {
     // reason the header kept claiming +96/−23 after the patches said otherwise. Nothing else is
     // touched: title, body and timestamps are not worth clobbering, and review state belongs to the
     // demo rather than the fixture.
-    update: { ...diffTotals, commitCount: 3 },
+    update: {
+      ...diffTotals,
+      commitCount: 3,
+      diffBaseSha: null,
+      diffHeadSha: null,
+      diffMergeBaseSha: null,
+      diffVerifiedAt: null,
+    },
     create: {
       organizationId: org.id,
       repositoryId: repo.id,
@@ -458,35 +465,51 @@ async function main(): Promise<void> {
   console.log(`\n  pull request  #${analysedPr.number} ${analysedPr.title}`);
 
   for (const file of fileSeeds) {
-    await prisma.pullRequestFile.upsert({
-      where: {
-        pullRequestId_filename: { pullRequestId: analysedPr.id, filename: file.filename },
-      },
-      // Fixture-owned for the same reason as the pull request above: a re-seed has to be able to
-      // correct a patch and the counts derived from it on an already-seeded database.
-      update: {
-        additions: file.additions,
-        deletions: file.deletions,
-        changes: file.additions + file.deletions,
-        patch: file.patch,
-        touchedLines: file.touchedLines,
-      },
-      create: {
-        pullRequestId: analysedPr.id,
-        filename: file.filename,
-        status: file.status,
-        additions: file.additions,
-        deletions: file.deletions,
-        changes: file.additions + file.deletions,
-        language: file.filename.endsWith('.sql')
-          ? 'sql'
-          : file.filename.endsWith('.json')
-            ? 'json'
-            : 'typescript',
-        flags: file.flags,
-        patch: file.patch,
-        touchedLines: file.touchedLines,
-      },
+    await prisma.$transaction(async (tx) => {
+      await tx.pullRequestImportFence.upsert({
+        where: { repositoryId_number: { repositoryId: repo.id, number: 412 } },
+        create: { repositoryId: repo.id, number: 412, generation: 1 },
+        update: { generation: { increment: 1 } },
+      });
+      await tx.pullRequest.update({
+        where: { id: analysedPr.id },
+        data: {
+          diffBaseSha: null,
+          diffHeadSha: null,
+          diffMergeBaseSha: null,
+          diffVerifiedAt: null,
+        },
+      });
+      await tx.pullRequestFile.upsert({
+        where: {
+          pullRequestId_filename: { pullRequestId: analysedPr.id, filename: file.filename },
+        },
+        // Fixture-owned for the same reason as the pull request above: a re-seed has to be able to
+        // correct a patch and the counts derived from it on an already-seeded database.
+        update: {
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.additions + file.deletions,
+          patch: file.patch,
+          touchedLines: file.touchedLines,
+        },
+        create: {
+          pullRequestId: analysedPr.id,
+          filename: file.filename,
+          status: file.status,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.additions + file.deletions,
+          language: file.filename.endsWith('.sql')
+            ? 'sql'
+            : file.filename.endsWith('.json')
+              ? 'json'
+              : 'typescript',
+          flags: file.flags,
+          patch: file.patch,
+          touchedLines: file.touchedLines,
+        },
+      });
     });
   }
   console.log(

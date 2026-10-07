@@ -349,14 +349,25 @@ export class RepositoriesService {
       if (existing) {
         const headChanged = existing.headSha !== pull.headSha;
 
-        await this.prisma.unscoped.pullRequest.update({
-          where: { id: existing.id },
-          data: {
-            ...common,
-            // A risk score computed against a previous head is misleading, so it is
-            // cleared rather than carried forward.
-            ...(headChanged ? { latestRiskScore: null, latestRiskLevel: null } : {}),
-          },
+        await this.prisma.unscoped.$transaction(async (tx) => {
+          await tx.pullRequestImportFence.upsert({
+            where: { repositoryId_number: { repositoryId, number: pull.number } },
+            create: { repositoryId, number: pull.number, generation: 1 },
+            update: { generation: { increment: 1 } },
+          });
+          await tx.pullRequest.update({
+            where: { id: existing.id },
+            data: {
+              ...common,
+              diffBaseSha: null,
+              diffHeadSha: null,
+              diffMergeBaseSha: null,
+              diffVerifiedAt: null,
+              // A risk score computed against a previous head is misleading, so it is
+              // cleared rather than carried forward.
+              ...(headChanged ? { latestRiskScore: null, latestRiskLevel: null } : {}),
+            },
+          });
         });
       } else {
         await this.prisma.unscoped.pullRequest.create({

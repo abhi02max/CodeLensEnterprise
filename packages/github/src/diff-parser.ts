@@ -133,7 +133,8 @@ export interface RawGithubFile {
 export function parseFileDiff(file: RawGithubFile): ParsedFileDiff {
   // GitHub omits `patch` for binary files and for files whose diff exceeds its
   // own size limits. Both cases are legitimately unreviewable line by line.
-  const binary = file.patch === undefined && file.changes > 0;
+  // Omission alone cannot distinguish binary content from a remote size limit.
+  const binary = false;
 
   return {
     filename: file.filename,

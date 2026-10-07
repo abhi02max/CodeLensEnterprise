@@ -317,6 +317,7 @@ model Repository {
 
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   pullRequests PullRequest[]
+  importFences PullRequestImportFence[]
   chunks       RagChunk[]
   teams        RepositoryTeam[]
   indexRuns    IndexRun[]
@@ -369,6 +370,12 @@ model PullRequest {
   headSha String
   baseRef String
   baseSha String
+
+  // Nullable: pre-provenance imports and demo fixtures are not verified snapshots.
+  diffBaseSha String?
+  diffHeadSha String?
+  diffMergeBaseSha String?
+  diffVerifiedAt DateTime?
 
   additions    Int @default(0)
   deletions    Int @default(0)
@@ -423,6 +430,16 @@ model PullRequest {
   @@index([wasRisky])
 }
 
+// Reservation precedes remote reads, including first imports without a PR row.
+model PullRequestImportFence {
+  repositoryId String
+  number Int
+  generation BigInt @default(0)
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@id([repositoryId, number])
+}
+
 enum FileChangeStatus {
   ADDED
   MODIFIED
@@ -449,7 +466,7 @@ model PullRequestFile {
   // a string array rather than an enum array so adding a flag needs no migration.
   flags String[] @default([])
 
-  // Unified diff. Null for binary files or patches over the size cap.
+  // Bounded unified hunks. Missing patches do not establish binary content.
   patch          String? @db.Text
   patchTruncated Boolean @default(false)
   binary         Boolean @default(false)

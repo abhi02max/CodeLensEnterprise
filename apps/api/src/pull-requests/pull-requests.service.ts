@@ -15,10 +15,11 @@ import {
   type RiskLevel,
 } from '@codelens/shared';
 import { ReviewVerdict, type Prisma } from '@codelens/database';
-import { NotFoundError } from '../common/errors';
+import { ConflictError, NotFoundError } from '../common/errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit-logs/audit.service';
 import { GithubClientFactory } from '../auth/github-client.factory';
+import { diffRevision, patchAvailability } from './diff-provenance';
 
 @Injectable()
 export class PullRequestsService {
@@ -77,53 +78,68 @@ export class PullRequestsService {
   }
 
   async findOne(organizationId: string, pullRequestId: string): Promise<PullRequestDetail> {
-    const row = await this.prisma.unscoped.pullRequest.findFirst({
-      where: { id: pullRequestId, organizationId },
-      include: {
-        ...PR_LIST_INCLUDE,
-        repository: { select: { id: true, fullName: true, defaultBranch: true } },
-        files: { orderBy: [{ changes: 'desc' }, { filename: 'asc' }] },
-        commits: { orderBy: { authoredAt: 'asc' } },
+    return this.prisma.unscoped.$transaction(
+      async (db) => {
+        const row = await db.pullRequest.findFirst({
+          where: { id: pullRequestId, organizationId },
+          include: {
+            ...PR_LIST_INCLUDE,
+            repository: { select: { id: true, fullName: true, defaultBranch: true } },
+            files: { orderBy: [{ changes: 'desc' }, { filename: 'asc' }] },
+            commits: { orderBy: { authoredAt: 'asc' } },
+          },
+        });
+
+        if (!row) throw new NotFoundError('Pull request', pullRequestId);
+
+        // Finding counts per file, from the most recent completed run, so the file tree can
+        // show where the problems are without loading every finding.
+        const latestRun = await db.reviewRun.findFirst({
+          where: {
+            pullRequestId,
+            organizationId,
+            headSha: row.headSha,
+            status: { in: ['COMPLETED', 'PARTIAL'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true },
+        });
+
+        const findingCounts = latestRun
+          ? await db.staticFinding.groupBy({
+              by: ['path'],
+              where: { reviewRunId: latestRun.id, preexisting: false },
+              _count: { _all: true },
+            })
+          : [];
+
+        const countsByPath = new Map(
+          findingCounts
+            .filter((row) => row.path !== null)
+            .map((row) => [row.path as string, row._count._all]),
+        );
+
+        const revision = diffRevision(row);
+        return {
+          ...toListItem(row),
+          body: row.body,
+          repository: row.repository,
+          mergeable: row.mergeable,
+          merged: row.merged,
+          mergedAt: row.mergedAt?.toISOString() ?? null,
+          headSha: row.headSha,
+          baseSha: row.baseSha,
+          labels: row.labels,
+          diffRevision: revision,
+          files: row.files.map((file) => ({
+            ...toFileView(file, countsByPath.get(file.filename) ?? 0),
+            patchAvailability: patchAvailability(file, revision.provenance === 'VERIFIED'),
+          })),
+          commits: row.commits.map(toCommitView),
+        };
       },
-    });
-
-    if (!row) throw new NotFoundError('Pull request', pullRequestId);
-
-    // Finding counts per file, from the most recent completed run, so the file tree can
-    // show where the problems are without loading every finding.
-    const latestRun = await this.prisma.unscoped.reviewRun.findFirst({
-      where: { pullRequestId, status: { in: ['COMPLETED', 'PARTIAL'] } },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
-
-    const findingCounts = latestRun
-      ? await this.prisma.unscoped.staticFinding.groupBy({
-          by: ['path'],
-          where: { reviewRunId: latestRun.id, preexisting: false },
-          _count: { _all: true },
-        })
-      : [];
-
-    const countsByPath = new Map(
-      findingCounts
-        .filter((row) => row.path !== null)
-        .map((row) => [row.path as string, row._count._all]),
+      { isolationLevel: 'RepeatableRead' },
     );
-
-    return {
-      ...toListItem(row),
-      body: row.body,
-      repository: row.repository,
-      mergeable: row.mergeable,
-      merged: row.merged,
-      mergedAt: row.mergedAt?.toISOString() ?? null,
-      headSha: row.headSha,
-      baseSha: row.baseSha,
-      labels: row.labels,
-      files: row.files.map((file) => toFileView(file, countsByPath.get(file.filename) ?? 0)),
-      commits: row.commits.map(toCommitView),
-    };
   }
 
   /**
@@ -150,13 +166,37 @@ export class PullRequestsService {
       preferUserId: params.userId,
     });
 
-    const [pull, files, commits] = await Promise.all([
-      client.getPullRequest(repository.fullName, params.number),
+    const reservation = await this.prisma.unscoped.pullRequestImportFence.upsert({
+      where: { repositoryId_number: { repositoryId: params.repositoryId, number: params.number } },
+      create: { repositoryId: params.repositoryId, number: params.number, generation: 1 },
+      update: { generation: { increment: 1 } },
+    });
+    const pull = await client.getPullRequest(repository.fullName, params.number);
+    const [files, commits] = await Promise.all([
       client.getPullRequestFiles(repository.fullName, params.number, {
         maxFiles: MAX_FILES_PER_REVIEW,
       }),
       client.getPullRequestCommits(repository.fullName, params.number),
     ]);
+    const verification = await client.verifyPullRequestFiles(
+      repository.fullName,
+      pull.baseSha,
+      pull.headSha,
+      files,
+      commits,
+    );
+    const after = await client.getPullRequest(repository.fullName, params.number);
+    if (
+      pull.baseSha !== after.baseSha ||
+      pull.headSha !== after.headSha ||
+      pull.updatedAt !== after.updatedAt ||
+      pull.changedFiles !== after.changedFiles ||
+      pull.commitCount !== after.commitCount ||
+      pull.additions !== after.additions ||
+      pull.deletions !== after.deletions ||
+      files.length !== Math.min(pull.changedFiles ?? -1, MAX_FILES_PER_REVIEW)
+    )
+      throw new ConflictError('Pull request moved during import; retry explicitly');
 
     const authorUserId = await this.resolveAuthorUserId(organizationId, pull.authorLogin);
 
@@ -168,68 +208,87 @@ export class PullRequestsService {
           ? PullRequestState.DRAFT
           : PullRequestState.OPEN;
 
-    const pullRequest = await this.prisma.unscoped.pullRequest.upsert({
-      where: { repositoryId_number: { repositoryId: params.repositoryId, number: params.number } },
-      create: {
-        organizationId,
-        repositoryId: params.repositoryId,
-        number: pull.number,
-        title: pull.title,
-        body: pull.body,
-        state,
-        draft: pull.draft,
-        htmlUrl: pull.htmlUrl,
-        authorLogin: pull.authorLogin,
-        authorAvatarUrl: pull.authorAvatarUrl,
-        authorUserId,
-        headRef: pull.headRef,
-        headSha: pull.headSha,
-        baseRef: pull.baseRef,
-        baseSha: pull.baseSha,
-        additions: pull.additions ?? 0,
-        deletions: pull.deletions ?? 0,
-        changedFiles: pull.changedFiles ?? files.length,
-        commitCount: pull.commitCount ?? commits.length,
-        mergeable: pull.mergeable ?? null,
-        merged: pull.merged,
-        mergedAt: pull.mergedAt ? new Date(pull.mergedAt) : null,
-        closedAt: pull.closedAt ? new Date(pull.closedAt) : null,
-        labels: pull.labels,
-        githubCreatedAt: new Date(pull.createdAt),
-        githubUpdatedAt: new Date(pull.updatedAt),
-      },
-      update: {
-        title: pull.title,
-        body: pull.body,
-        state,
-        draft: pull.draft,
-        authorUserId,
-        headRef: pull.headRef,
-        headSha: pull.headSha,
-        baseSha: pull.baseSha,
-        additions: pull.additions ?? 0,
-        deletions: pull.deletions ?? 0,
-        changedFiles: pull.changedFiles ?? files.length,
-        commitCount: pull.commitCount ?? commits.length,
-        mergeable: pull.mergeable ?? null,
-        merged: pull.merged,
-        mergedAt: pull.mergedAt ? new Date(pull.mergedAt) : null,
-        closedAt: pull.closedAt ? new Date(pull.closedAt) : null,
-        labels: pull.labels,
-        githubUpdatedAt: new Date(pull.updatedAt),
-      },
-      select: { id: true },
-    });
+    const pullRequest = await this.prisma.unscoped.$transaction(async (tx) => {
+      // Conditional update acquires the fence lock through publication commit.
+      const owned = await tx.pullRequestImportFence.updateMany({
+        where: {
+          repositoryId: params.repositoryId,
+          number: params.number,
+          generation: reservation.generation,
+        },
+        data: { generation: reservation.generation },
+      });
+      if (owned.count !== 1) throw new ConflictError('Import superseded by a newer reservation');
+      const published = await tx.pullRequest.upsert({
+        where: {
+          repositoryId_number: { repositoryId: params.repositoryId, number: params.number },
+        },
+        create: {
+          organizationId,
+          repositoryId: params.repositoryId,
+          number: pull.number,
+          title: pull.title,
+          body: pull.body,
+          state,
+          draft: pull.draft,
+          htmlUrl: pull.htmlUrl,
+          authorLogin: pull.authorLogin,
+          authorAvatarUrl: pull.authorAvatarUrl,
+          authorUserId,
+          headRef: pull.headRef,
+          headSha: pull.headSha,
+          baseRef: pull.baseRef,
+          baseSha: pull.baseSha,
+          diffBaseSha: pull.baseSha,
+          diffHeadSha: pull.headSha,
+          diffMergeBaseSha: verification.mergeBaseSha,
+          diffVerifiedAt: new Date(),
+          additions: pull.additions ?? 0,
+          deletions: pull.deletions ?? 0,
+          changedFiles: pull.changedFiles ?? files.length,
+          commitCount: pull.commitCount ?? commits.length,
+          mergeable: pull.mergeable ?? null,
+          merged: pull.merged,
+          mergedAt: pull.mergedAt ? new Date(pull.mergedAt) : null,
+          closedAt: pull.closedAt ? new Date(pull.closedAt) : null,
+          labels: pull.labels,
+          githubCreatedAt: new Date(pull.createdAt),
+          githubUpdatedAt: new Date(pull.updatedAt),
+        },
+        update: {
+          title: pull.title,
+          body: pull.body,
+          state,
+          draft: pull.draft,
+          authorUserId,
+          headRef: pull.headRef,
+          headSha: pull.headSha,
+          baseSha: pull.baseSha,
+          baseRef: pull.baseRef,
+          diffBaseSha: pull.baseSha,
+          diffHeadSha: pull.headSha,
+          diffMergeBaseSha: verification.mergeBaseSha,
+          diffVerifiedAt: new Date(),
+          additions: pull.additions ?? 0,
+          deletions: pull.deletions ?? 0,
+          changedFiles: pull.changedFiles ?? files.length,
+          commitCount: pull.commitCount ?? commits.length,
+          mergeable: pull.mergeable ?? null,
+          merged: pull.merged,
+          mergedAt: pull.mergedAt ? new Date(pull.mergedAt) : null,
+          closedAt: pull.closedAt ? new Date(pull.closedAt) : null,
+          labels: pull.labels,
+          githubUpdatedAt: new Date(pull.updatedAt),
+        },
+        select: { id: true },
+      });
 
-    // Files are replaced wholesale. A force-push can remove files entirely, and diffing
-    // would leave stale rows describing changes that no longer exist in the PR.
-    await this.prisma.unscoped.$transaction(async (tx) => {
-      await tx.pullRequestFile.deleteMany({ where: { pullRequestId: pullRequest.id } });
+      await tx.pullRequestFile.deleteMany({ where: { pullRequestId: published.id } });
 
       if (files.length > 0) {
         await tx.pullRequestFile.createMany({
           data: files.map((file) => ({
-            pullRequestId: pullRequest.id,
+            pullRequestId: published.id,
             filename: file.filename,
             previousFilename: file.previousFilename,
             status: file.status,
@@ -248,9 +307,9 @@ export class PullRequestsService {
 
       for (const commit of commits) {
         await tx.commit.upsert({
-          where: { pullRequestId_sha: { pullRequestId: pullRequest.id, sha: commit.sha } },
+          where: { pullRequestId_sha: { pullRequestId: published.id, sha: commit.sha } },
           create: {
-            pullRequestId: pullRequest.id,
+            pullRequestId: published.id,
             sha: commit.sha,
             message: commit.message,
             authorName: commit.authorName,
@@ -262,6 +321,7 @@ export class PullRequestsService {
           update: { message: commit.message },
         });
       }
+      return published;
     });
 
     await this.audit.record({
@@ -277,25 +337,41 @@ export class PullRequestsService {
     return this.findOne(organizationId, pullRequest.id);
   }
 
-  /** Raw diff rows, used by the analysis pipeline. */
+  /** Preserve the existing array contract, including raw row fields. */
   async getFiles(organizationId: string, pullRequestId: string) {
-    const pullRequest = await this.prisma.unscoped.pullRequest.findFirst({
-      where: { id: pullRequestId, organizationId },
-      select: { id: true },
-    });
-
-    if (!pullRequest) throw new NotFoundError('Pull request', pullRequestId);
-
-    return this.prisma.unscoped.pullRequestFile.findMany({
-      where: { pullRequestId },
-      orderBy: { filename: 'asc' },
-    });
+    const result = await this.getDiff(organizationId, pullRequestId);
+    return result.files.map((file) => ({ ...file, diffRevision: result.diffRevision }));
   }
 
-  private async resolveAuthorUserId(
-    organizationId: string,
-    login: string,
-  ): Promise<string | null> {
+  /** Coherent composition, including revision identity for a zero-file snapshot. */
+  async getDiff(organizationId: string, pullRequestId: string) {
+    return this.prisma.unscoped.$transaction(
+      async (db) => {
+        const pullRequest = await db.pullRequest.findFirst({
+          where: { id: pullRequestId, organizationId },
+          include: { files: { orderBy: { filename: 'asc' } } },
+        });
+
+        if (!pullRequest) throw new NotFoundError('Pull request', pullRequestId);
+
+        const revision = diffRevision(pullRequest);
+        return {
+          pullRequestId,
+          baseSha: pullRequest.baseSha,
+          headSha: pullRequest.headSha,
+          diffRevision: revision,
+          files: pullRequest.files.map((file) => ({
+            ...file,
+            ...toFileView(file, 0),
+            patchAvailability: patchAvailability(file, revision.provenance === 'VERIFIED'),
+          })),
+        };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
+  }
+
+  private async resolveAuthorUserId(organizationId: string, login: string): Promise<string | null> {
     const account = await this.prisma.unscoped.account.findFirst({
       where: {
         provider: 'github',
@@ -376,12 +452,10 @@ function toListItem(row: PullRequestWithRelations): PullRequestListItem {
       : null,
     humanReviewSummary: {
       approvals: currentReviews.filter((r) => r.verdict === ReviewVerdict.APPROVED).length,
-      changesRequested: currentReviews.filter(
-        (r) => r.verdict === ReviewVerdict.CHANGES_REQUESTED,
-      ).length,
-      needsDiscussion: currentReviews.filter(
-        (r) => r.verdict === ReviewVerdict.NEEDS_DISCUSSION,
-      ).length,
+      changesRequested: currentReviews.filter((r) => r.verdict === ReviewVerdict.CHANGES_REQUESTED)
+        .length,
+      needsDiscussion: currentReviews.filter((r) => r.verdict === ReviewVerdict.NEEDS_DISCUSSION)
+        .length,
     },
     unresolvedCommentCount: row._count.comments,
     flags: [...flags],
@@ -419,8 +493,10 @@ function toFileView(
     flags: file.flags.length > 0 ? (file.flags as FileFlag[]) : classifyFile(file.filename),
     patch: file.patch,
     patchTruncated: file.patchTruncated,
-    binary: file.binary,
+    // Historical omission-derived flags are not authoritative binary evidence.
+    binary: false,
     findingCount,
+    patchAvailability: 'UNVERIFIED',
   };
 }
 
