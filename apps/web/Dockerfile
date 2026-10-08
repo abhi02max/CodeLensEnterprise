@@ -4,6 +4,8 @@ WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared ./packages/shared
+COPY packages/github/package.json ./packages/github/package.json
+COPY packages/github/src/diff-parser.ts ./packages/github/src/diff-parser.ts
 COPY apps/web ./apps/web
 RUN pnpm install --frozen-lockfile
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1

@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import * as React from 'react';
 import { AnalyzeButton } from '@/components/analyze-button';
-import { RiskBadge, RunStatusBadge } from '@/components/risk';
 import {
   Alert,
   Badge,
@@ -13,7 +12,6 @@ import {
   Card,
   CardBody,
   CardHeader,
-  EmptyState,
   Field,
   Skeleton,
   Textarea,
@@ -23,297 +21,195 @@ import { AiReviewPanel } from '@/components/workspace/ai-review-panel';
 import { CommentsPanel, type DraftAnchor } from '@/components/workspace/comments-panel';
 import { ContextPanel } from '@/components/workspace/context-panel';
 import { ConversationPanel } from '@/components/workspace/conversation-panel';
-import { FindingsPanel } from '@/components/workspace/findings-panel';
 import { GatePanel } from '@/components/workspace/gate-panel';
 import { RiskPanel } from '@/components/workspace/risk-panel';
 import { SharePanel } from '@/components/workspace/share-panel';
 import { ToolRunsPanel } from '@/components/workspace/tool-runs-panel';
+import { ReviewWorkspace } from '@/components/workspace/review-workspace';
+import '@/components/workspace/review-workspace.css';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { duration, relativeTime, shortSha } from '@/lib/format';
 import { useSession } from '@/lib/providers';
-import type { FindingView } from '@/lib/types';
+import { reviewsHref } from '@/lib/review-inbox';
 
-/**
- * The review workspace. This is the screen the product exists to show.
- *
- * Everything comes from one request: `GET /review-sessions/:id` returns the pull request, the
- * latest run, risk, findings, retrieved context, tool provenance, verdicts, threads, share links
- * and the caller's permissions together. Fetching those separately would make the page assemble
- * itself in visible stages, with the merge gate — the most decision-relevant part — arriving last.
- */
 export default function ReviewWorkspacePage() {
   const params = useParams<{ id: string }>();
   const sessionId = params.id;
   const queryClient = useQueryClient();
-  const { user } = useSession();
-
+  const { user, role } = useSession();
   const [anchor, setAnchor] = React.useState<DraftAnchor | null>(null);
-
   const session = useQuery({
     queryKey: ['review-session', sessionId],
     queryFn: () => api.session_(sessionId),
   });
-
-  const data = session.data;
-  const error = session.error as ApiError | null;
-
-  if (error) {
+  const prId = session.data?.pullRequestId;
+  const detail = useQuery({
+    queryKey: ['workspace-pr', prId],
+    queryFn: async () => {
+      const { id, repository, headSha, baseSha, diffRevision } = await api.pullRequest(prId!);
+      return { id, repository, headSha, baseSha, diffRevision };
+    },
+    enabled: Boolean(prId),
+    refetchOnWindowFocus: false,
+  });
+  const diff = useQuery({
+    queryKey: ['workspace-diff', prId],
+    queryFn: () => api.pullRequestDiff(prId!),
+    enabled: Boolean(prId),
+    refetchOnWindowFocus: false,
+  });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
+    void queryClient.invalidateQueries({ queryKey: ['workspace-pr', prId] });
+    void queryClient.invalidateQueries({ queryKey: ['workspace-diff', prId] });
+  };
+  if (session.error) {
+    const error = session.error as ApiError;
     return (
       <Alert
-        tone={error.code === 'NETWORK_ERROR' ? 'warning' : 'danger'}
-        title={
-          error.status === 404
-            ? 'Review session not found'
-            : error.code === 'NETWORK_ERROR'
-              ? 'API unreachable'
-              : 'Could not load the review'
-        }
+        tone={error.status === 404 ? 'warning' : 'danger'}
+        title={error.status === 404 ? 'Review unavailable' : 'Could not load the review'}
       >
         <p>{error.message}</p>
-        {error.traceId && (
-          <p className="mt-1 font-mono text-[0.6875rem] opacity-70">trace {error.traceId}</p>
-        )}
-        <Link href="/pull-requests" className="mt-2 inline-block text-xs underline">
-          Back to pull requests
+        <Button size="sm" onClick={() => void session.refetch()}>
+          Retry review read
+        </Button>
+        <Link className="ml-3 underline" href={reviewsHref()}>
+          Back to Reviews
         </Link>
       </Alert>
     );
   }
-
-  if (!data) {
+  const data = session.data;
+  if (!data)
     return (
-      <div className="space-y-3">
-        <Skeleton className="h-16 w-full" />
-        <div className="grid gap-3 xl:grid-cols-3">
-          <Skeleton className="h-64 xl:col-span-2" />
-          <Skeleton className="h-64" />
-        </div>
+      <div role="status" aria-label="Loading review">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="mt-3 h-96 w-full" />
       </div>
     );
-  }
-
-  const { pullRequest, repository, permissions } = data;
-
   return (
-    <div className="space-y-3">
-      {/* ---------------------------------------------------------------- header */}
-      <div className="rounded-lg border border-surface-border bg-white px-4 py-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-              <Link href="/repositories" className="hover:underline">
-                {repository.fullName}
-              </Link>
-              <span aria-hidden="true">/</span>
-              <span className="numeric">#{pullRequest.number}</span>
-              {pullRequest.draft && <Badge tone="neutral">draft</Badge>}
-              <Badge tone="outline">{pullRequest.state.toLowerCase()}</Badge>
-            </div>
-
-            <h1 className="mt-1 text-lg font-semibold leading-snug tracking-tight text-slate-900">
-              {pullRequest.title}
-            </h1>
-
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-              <span>{pullRequest.author.login}</span>
-              <span className="font-mono">
-                {pullRequest.headRef}
-                <span className="text-slate-400"> → {pullRequest.baseRef}</span>
-              </span>
-              <span className="font-mono">{shortSha(pullRequest.headSha)}</span>
-              <span className="numeric">
-                +{pullRequest.additions} −{pullRequest.deletions} · {pullRequest.changedFiles} file
-                {pullRequest.changedFiles === 1 ? '' : 's'} · {pullRequest.commitCount} commit
-                {pullRequest.commitCount === 1 ? '' : 's'}
-              </span>
-              <a
-                href={pullRequest.htmlUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="underline hover:text-slate-800"
-              >
-                View on GitHub
-              </a>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              {data.risk && <RiskBadge level={data.risk.level} score={data.risk.score} />}
-              {data.run && <RunStatusBadge status={data.run.status} />}
-            </div>
-            {permissions.canTriggerAnalysis && (
-              <AnalyzeButton
-                pullRequestId={sessionId}
-                onComplete={() =>
-                  void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] })
-                }
+    <ReviewWorkspace
+      key={sessionId}
+      session={data}
+      detail={detail.data}
+      diff={diff.data}
+      diffLoading={detail.isPending || diff.isPending}
+      diffError={detail.isError || diff.isError}
+      refresh={refresh}
+      discuss={(finding) => {
+        const f = finding.staticFinding;
+        if (f)
+          setAnchor({
+            path: f.path ?? '',
+            line: f.line ?? 1,
+            findingFingerprint: f.fingerprint,
+            ruleId: f.ruleId,
+          });
+      }}
+      support={(mode) => (
+        <div className="review-support-layout">
+          {mode === 'Discussion' && (
+            <>
+              <CommentsPanel
+                sessionId={sessionId}
+                comments={data.comments}
+                canComment={data.permissions.canComment}
+                canModerate={data.permissions.canModerateComments}
+                currentUserId={user?.id ?? null}
+                draftAnchor={anchor}
+                onClearAnchor={() => setAnchor(null)}
               />
-            )}
-          </div>
-        </div>
-
-        {data.run && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-surface-border pt-2 text-xs text-slate-500">
-            <span>stage {data.run.stage.replace(/_/g, ' ').toLowerCase()}</span>
-            <span>{duration(data.run.durationMs)}</span>
-            <span>finished {relativeTime(data.run.finishedAt)}</span>
-            {data.run.triggeredBy && <span>by {data.run.triggeredBy.name}</span>}
-            <CapabilityDots capabilities={data.run.capabilities} />
-          </div>
-        )}
-      </div>
-
-      {/* ---- stale analysis is called out loudly: approving against it would approve unreviewed code */}
-      {data.run?.stale && (
-        <Alert tone="warning" title="This analysis is out of date">
-          It ran against {shortSha(data.run.headSha)} but the pull request head is now{' '}
-          {shortSha(pullRequest.headSha)}. Re-run the analysis before relying on the findings below.
-        </Alert>
-      )}
-
-      {!data.analyzed && (
-        <Card>
-          <EmptyState
-            title="Not analysed yet"
-            description="Run the review pipeline to produce findings, a risk score and repository context."
-            action={
-              permissions.canTriggerAnalysis ? (
-                <AnalyzeButton
-                  pullRequestId={sessionId}
-                  onComplete={() =>
-                    void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] })
+              <ConversationPanel key={sessionId} sessionId={sessionId} context={data} />
+            </>
+          )}
+          {mode === 'Analysis' && (
+            <>
+              {data.run && (
+                <section
+                  aria-label="Recorded analysis provenance"
+                  className="text-xs text-content-secondary"
+                >
+                  <h2 className="font-semibold">Recorded analysis</h2>
+                  <p>
+                    {data.run.status} / {data.run.stage.replace(/_/g, ' ')} / head{' '}
+                    {shortSha(data.run.headSha)} / {duration(data.run.durationMs)} / finished{' '}
+                    {relativeTime(data.run.finishedAt)}
+                  </p>
+                  <p>
+                    Capabilities:{' '}
+                    {Object.entries(data.run.capabilities)
+                      .map(
+                        ([name, available]) =>
+                          `${name}: ${available ? 'available' : 'unavailable'}`,
+                      )
+                      .join(' / ')}
+                  </p>
+                </section>
+              )}
+              {data.run?.status === 'FAILED' && (
+                <Alert tone="danger" title="Analysis failed">
+                  {data.run.error ?? 'See the recorded tool outcomes for available evidence.'}
+                </Alert>
+              )}
+              {data.run?.stale && (
+                <Alert tone="warning" title="Analysis is out of date">
+                  Recorded analysis head {shortSha(data.run.headSha)} differs from the PR head.
+                </Alert>
+              )}
+              {!data.analyzed && (
+                <Alert tone="info" title="Not analysed yet">
+                  No analysis evidence is available for this review.
+                </Alert>
+              )}
+              {data.analyzed && (
+                <AiReviewPanel
+                  aiReview={data.aiReview}
+                  status={data.aiReviewStatus}
+                  canRetry={data.permissions.canTriggerAnalysis}
+                  retryAction={
+                    <AnalyzeButton
+                      pullRequestId={data.pullRequestId}
+                      size="sm"
+                      label="Re-run analysis"
+                      onComplete={refresh}
+                    />
                   }
                 />
-              ) : undefined
-            }
-          />
-        </Card>
-      )}
-
-      {/* ---------------------------------------------------------------- body
-          Panels whose only content comes from a run are omitted when there is no run. They used to
-          render regardless, so an un-analysed pull request — PR #415 in the demo data is one click
-          from the main path — showed the "Not analysed yet" call-out followed by four more cards
-          each repeating that there is nothing to show. Discussion, the merge gate, the verdict
-          controls, sharing and activity all work without a run, so those stay. */}
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <div className="space-y-3 xl:col-span-2">
-          {data.analyzed && (
-            <AiReviewPanel
-              aiReview={data.aiReview}
-              status={data.aiReviewStatus}
-              canRetry={permissions.canTriggerAnalysis}
-              retryAction={
-                <AnalyzeButton
-                  pullRequestId={sessionId}
-                  size="sm"
-                  label="Re-run analysis"
-                  onComplete={() =>
-                    void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] })
-                  }
-                />
-              }
-            />
+              )}
+              {data.analyzed && <RiskPanel risk={data.risk} />}
+              {data.metrics && <MetricsPanel metrics={data.metrics} />}
+              {data.analyzed && <ContextPanel context={data.ragContext} />}
+              {data.analyzed && <ToolRunsPanel toolRuns={data.toolRuns} />}
+              {data.analyzed && data.degradation.length > 0 && (
+                <Alert tone="warning" title="Unavailable in this run">
+                  <ul>
+                    {data.degradation.map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                </Alert>
+              )}
+            </>
           )}
-
-          {data.analyzed && (
-            <FindingsPanel
-              findings={data.findings}
-              comments={data.comments}
-              canComment={permissions.canComment}
-              onDiscuss={(finding: FindingView) =>
-                setAnchor({
-                  path: finding.path ?? '',
-                  line: finding.line ?? 1,
-                  findingFingerprint: finding.fingerprint,
-                  ruleId: finding.ruleId,
-                })
-              }
-            />
+          {mode === 'Decision' && (
+            <>
+              <GatePanel gate={data.gate} />
+              <VerdictPanel sessionId={sessionId} session={data} />
+              <SharePanel
+                sessionId={sessionId}
+                shareLinks={data.shareLinks}
+                permissions={data.permissions}
+              />
+              {(role === 'ADMIN' || role === 'OWNER') && (
+                <ActivityPanel title="Recent organization activity" limit={6} />
+              )}
+            </>
           )}
-
-          <CommentsPanel
-            sessionId={sessionId}
-            comments={data.comments}
-            canComment={permissions.canComment}
-            canModerate={permissions.canModerateComments}
-            currentUserId={user?.id ?? null}
-            draftAnchor={anchor}
-            onClearAnchor={() => setAnchor(null)}
-          />
-
-          {data.analyzed && <ContextPanel context={data.ragContext} />}
-          <ConversationPanel key={sessionId} sessionId={sessionId} context={data} />
         </div>
-
-        {/*
-          Sidebar order is status, then action, then evidence. The merge gate answers "can this
-          ship" and so comes first; the verdict controls act on that answer; risk, metrics and
-          pipeline explain it. Having the verdict buttons above the gate meant the first thing a
-          reviewer saw was a control rather than the state it changes.
-        */}
-        <div className="space-y-3">
-          <GatePanel gate={data.gate} />
-          <VerdictPanel sessionId={sessionId} session={data} />
-          {data.analyzed && <RiskPanel risk={data.risk} />}
-          {data.metrics && <MetricsPanel metrics={data.metrics} />}
-          {data.analyzed && <ToolRunsPanel toolRuns={data.toolRuns} />}
-          <SharePanel
-            sessionId={sessionId}
-            shareLinks={data.shareLinks}
-            permissions={permissions}
-          />
-          <ActivityPanel title="Recent activity" limit={6} />
-        </div>
-      </div>
-
-      {/* Guarded on `analyzed` too: with no run there is nothing to have degraded, and the one entry
-          the API returns in that case ("has not been analysed yet") is the same sentence the empty
-          state and the merge gate already carry, under a heading that contradicts it. */}
-      {data.analyzed && data.degradation.length > 0 && (
-        <Card>
-          <CardHeader title="Degraded in this run" subtitle="What was unavailable and why" />
-          <CardBody>
-            <ul className="space-y-1">
-              {data.degradation.map((note) => (
-                <li key={note} className="text-xs text-slate-600">
-                  · {note}
-                </li>
-              ))}
-            </ul>
-          </CardBody>
-        </Card>
       )}
-    </div>
-  );
-}
-
-function CapabilityDots({
-  capabilities,
-}: {
-  capabilities: { staticAnalysis: boolean; mlRisk: boolean; ragContext: boolean; aiReview: boolean };
-}) {
-  const entries: Array<[string, boolean]> = [
-    ['static', capabilities.staticAnalysis],
-    ['ml risk', capabilities.mlRisk],
-    ['context', capabilities.ragContext],
-    ['ai review', capabilities.aiReview],
-  ];
-
-  return (
-    <span className="flex items-center gap-2">
-      {entries.map(([label, ok]) => (
-        <span key={label} className="flex items-center gap-1">
-          <span
-            aria-hidden="true"
-            className={ok ? 'h-1.5 w-1.5 rounded-full bg-risk-low' : 'h-1.5 w-1.5 rounded-full bg-slate-300'}
-          />
-          <span className={ok ? 'text-slate-600' : 'text-slate-400 line-through'}>{label}</span>
-        </span>
-      ))}
-    </span>
+    />
   );
 }
 
@@ -341,24 +237,27 @@ function VerdictPanel({
   };
 
   const approve = useMutation({
-    mutationFn: () => api.approve(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
+    mutationFn: () =>
+      api.approve(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
     onMutate: () => setError(null),
     onSuccess: refresh,
     onError,
   });
 
   const requestChanges = useMutation({
-    mutationFn: () => api.requestChanges(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
+    mutationFn: () =>
+      api.requestChanges(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
     onMutate: () => setError(null),
     onSuccess: refresh,
     onError,
   });
 
   const refreshReview = useMutation({
-    mutationFn: () => queryClient.invalidateQueries(
-      { queryKey: ['review-session', sessionId] },
-      { throwOnError: true },
-    ),
+    mutationFn: () =>
+      queryClient.invalidateQueries(
+        { queryKey: ['review-session', sessionId] },
+        { throwOnError: true },
+      ),
     onMutate: () => setSummary(''),
     onSuccess: () => {
       setError(null);
@@ -418,10 +317,7 @@ function VerdictPanel({
 
             {error && <Alert tone="danger">{error}</Alert>}
             {headChanged && (
-              <Button
-                disabled={busy}
-                onClick={() => refreshReview.mutate()}
-              >
+              <Button disabled={busy} onClick={() => refreshReview.mutate()}>
                 Refresh review
               </Button>
             )}
@@ -490,7 +386,9 @@ function MetricsPanel({ metrics }: { metrics: import('@/lib/types').MetricsView 
           <Field label="Files changed">{metrics.filesChanged}</Field>
           <Field label="Complexity">
             {metrics.complexityBefore} → {metrics.complexityAfter}
-            <span className={metrics.complexityDelta > 0 ? 'ml-1 text-risk-high' : 'ml-1 text-risk-low'}>
+            <span
+              className={metrics.complexityDelta > 0 ? 'ml-1 text-risk-high' : 'ml-1 text-risk-low'}
+            >
               ({metrics.complexityDelta >= 0 ? '+' : ''}
               {metrics.complexityDelta})
             </span>

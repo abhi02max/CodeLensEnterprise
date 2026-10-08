@@ -1,6 +1,8 @@
 import { apiRequest, setAccessToken } from './api-client';
 import type { ReviewQuery } from './review-inbox';
 import type {
+  PullRequestDetail,
+  PullRequestFilesView,
   ConversationDetail,
   ConversationList,
   ConversationView,
@@ -51,6 +53,10 @@ import type {
  * the totals drive the dashboard counts, and unwrapping them here would mean fetching twice.
  */
 export const api = {
+  pullRequest: (id: string) =>
+    apiRequest<PullRequestDetail>(`/pull-requests/${encodeURIComponent(id)}`),
+  pullRequestDiff: (id: string) =>
+    apiRequest<PullRequestFilesView>(`/pull-requests/${encodeURIComponent(id)}/diff`),
   validationAi: (id: string, reviewId?: string) => apiRequest<ValidationAiView | null>(`/validations/${encodeURIComponent(id)}/ai-rereview${reviewId ? `?reviewId=${encodeURIComponent(reviewId)}` : ''}`),
   requestValidationAi: (id: string, requestId: string) => apiRequest<ValidationAiView>(`/validations/${encodeURIComponent(id)}/ai-rereview`, {method:'POST',body:{requestId}}),
   cancelValidationAi: (id: string, reviewId: string, requestId: string) => apiRequest<ValidationAiView>(`/validations/${encodeURIComponent(id)}/ai-rereview/${encodeURIComponent(reviewId)}/cancel`, {method:'POST',body:{requestId}}),
