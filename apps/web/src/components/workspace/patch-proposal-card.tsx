@@ -57,7 +57,13 @@ function intentFrom(proposal: PatchProposalView): PatchIntent {
     })),
   };
 }
-export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView }) {
+export function PatchProposalCard({
+  proposal: p,
+  decisionOnly = false,
+}: {
+  proposal: PatchProposalView;
+  decisionOnly?: boolean;
+}) {
   const client = useQueryClient();
   const [editing, setEditing] = React.useState(false);
   const [feedback, setFeedback] = React.useState('');
@@ -105,7 +111,11 @@ export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView
     <article
       id={`patch-proposal-${p.id}`}
       aria-label={`Patch proposal revision ${p.revision}`}
-      className="rounded border border-surface-border bg-white p-3 text-sm"
+      className={
+        decisionOnly
+          ? 'candidate-decision'
+          : 'rounded border border-surface-border bg-white p-3 text-sm'
+      }
     >
       <h3 className="break-words font-semibold">{p.summary}</h3>
       <p className="mt-1 break-words text-xs">
@@ -133,29 +143,39 @@ export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView
         Accepting approves this proposal for a future application step. No repository files are
         changed.
       </p>
-      {p.files.map((f) => (
-        <details key={f.path} open className="mt-3">
-          <summary className="break-all font-medium">{f.path}</summary>
-          <pre
-            aria-label={`Canonical diff for ${f.path}`}
-            className="my-2 max-h-96 overflow-auto border-y border-surface-border py-2 text-xs"
-          >
-            {f.diff}
-          </pre>
-          <div className="flex flex-wrap gap-2">
-            {f.evidenceIds.map((id) => (
-              <button
-                type="button"
-                key={id}
-                onClick={() => setEvidenceId(id)}
-                className="break-all text-xs text-blue-700 underline focus-visible:outline focus-visible:outline-2"
-              >
-                Evidence {id}
-              </button>
-            ))}
-          </div>
-        </details>
-      ))}
+      {!decisionOnly &&
+        p.files.map((f) => (
+          <details key={f.path} open className="mt-3">
+            <summary className="break-all font-medium">{f.path}</summary>
+            <pre
+              aria-label={`Canonical diff for ${f.path}`}
+              className="my-2 max-h-96 overflow-auto border-y border-surface-border py-2 text-xs"
+            >
+              {f.diff}
+            </pre>
+            <div className="flex flex-wrap gap-2">
+              {f.evidenceIds.map((id) => (
+                <button
+                  type="button"
+                  key={id}
+                  onClick={() => setEvidenceId(id)}
+                  className="break-all text-xs text-blue-700 underline focus-visible:outline focus-visible:outline-2"
+                >
+                  Evidence {id}
+                </button>
+              ))}
+            </div>
+          </details>
+        ))}
+      {decisionOnly && (
+        <div className="flex flex-wrap gap-2">
+          {Array.from(new Set(p.files.flatMap((f) => f.evidenceIds))).map((id, i) => (
+            <Button key={id} size="sm" variant="ghost" onClick={() => setEvidenceId(id)}>
+              Supporting evidence {i + 1}
+            </Button>
+          ))}
+        </div>
+      )}
       {evidenceId && evidence.isPending && <p role="status">Loading evidence...</p>}
       {evidence.isError && (
         <Alert tone="danger">
@@ -252,6 +272,10 @@ export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView
             change.mutate('FEEDBACK');
           }}
         >
+          <p className="text-xs">
+            Sending feedback records a human message and requests a bounded assistant turn using the
+            existing configured provider.
+          </p>
           <Textarea
             aria-label="Proposal revision feedback"
             rows={3}
@@ -278,7 +302,7 @@ export function PatchProposalCard({ proposal: p }: { proposal: PatchProposalView
             : 'Proposal command failed. No repository files changed.'}
         </Alert>
       )}
-      <PatchApplicationPanel proposal={p} />
+      {!decisionOnly && <PatchApplicationPanel proposal={p} />}
     </article>
   );
 }

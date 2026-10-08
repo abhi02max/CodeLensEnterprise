@@ -21,13 +21,16 @@ export function ValidationStaticPanel({
 }) {
   const [filters, setFilters] = React.useState<Partial<StaticFindingsQuery>>({});
   const [afterId, setAfterId] = React.useState<string>();
+  const previousActive = React.useRef(active);
   const query = useQuery({
     queryKey: ['validation-static', validationId, filters, afterId],
     queryFn: () => api.validationStatic(validationId, { ...filters, afterId }),
     refetchInterval: active ? 1000 : false,
+    refetchOnWindowFocus: false,
   });
   React.useEffect(() => {
-    if (!active) void query.refetch();
+    if (previousActive.current && !active) void query.refetch();
+    previousActive.current = active;
   }, [active, validationId, query.refetch]);
   return (
     <section
@@ -42,7 +45,7 @@ export function ValidationStaticPanel({
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </Alert>
       )}
-      {query.data && (
+      {query.data && !query.isError && (
         <>
           {!query.data.analyses.length && (
             <p className="text-xs">
@@ -50,17 +53,25 @@ export function ValidationStaticPanel({
             </p>
           )}
           {query.data.analyses.map((a) => (
-            <p key={a.side} className="break-all text-xs">
+            <p key={a.side} className="text-xs">
               {a.side}: {a.status}
-              {a.reason ? ` (${a.reason})` : ''} · {a.findingCount} observations ·{' '}
-              {a.rulesetVersion} · {a.fingerprintVersion}
-              <br />
-              Source {a.sourceDigest} · Rules {a.rulesetDigest} · Configuration{' '}
-              {a.configurationDigest}
+              {a.reason ? ` (${a.reason})` : ''} · {a.findingCount} observations
             </p>
           ))}
+          <details className="text-xs">
+            <summary>Static source and analyzer identities</summary>
+            {query.data.analyses.map((a) => (
+              <p key={a.side} className="break-all">
+                {a.side} · {a.rulesetVersion} · {a.fingerprintVersion}
+                <br />
+                Source {a.sourceDigest} · Rules {a.rulesetDigest} · Configuration{' '}
+                {a.configurationDigest}
+              </p>
+            ))}
+          </details>
           {query.data.analyses.length === 2 &&
-          query.data.analyses.every((a) => a.status === 'COMPLETE') ? (
+          query.data.analyses.every((a) => a.status === 'COMPLETE') &&
+          new Set(query.data.analyses.map((a) => a.side)).size === 2 ? (
             <p className="my-2 text-xs">
               {Object.entries(query.data.summary)
                 .map(([key, n]) => `${key}: ${n}`)

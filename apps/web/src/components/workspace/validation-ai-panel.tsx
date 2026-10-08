@@ -5,27 +5,39 @@ import { MessageSquare, X } from 'lucide-react';
 import { VALIDATION_AI_DISCLAIMER, type ValidationAiResult } from '@codelens/shared';
 import { api } from '@/lib/api';
 import { Alert, Button } from '@/components/ui/primitives';
+import type { PatchProposalView, ValidationView } from '@codelens/shared';
+import { aiMatches, executionActive, mlMatches } from '@/lib/candidate-evaluation';
 
 export function ValidationAiPanel({
   validationId,
   eligible,
+  association,
 }: {
   validationId: string;
   eligible: boolean;
+  association?: { proposal: PatchProposalView; validation: ValidationView };
 }) {
   const client = useQueryClient(),
     requestId = React.useRef<string | null>(null);
   const query = useQuery({
     queryKey: ['validation-ai', validationId],
     queryFn: () => api.validationAi(validationId),
-    refetchInterval: 1000,
+    refetchInterval: (q) => (q.state.data && executionActive(q.state.data.state) ? 1500 : false),
+    refetchOnWindowFocus: false,
   });
   const ml = useQuery({
     queryKey: ['validation-ml', validationId],
     queryFn: () => api.validationMl(validationId),
-    refetchInterval: 1000,
+    refetchInterval: (q) => (q.state.data && executionActive(q.state.data.state) ? 1500 : false),
+    refetchOnWindowFocus: false,
   });
-  const row = query.data,
+  const mismatch =
+    !!query.data &&
+    !!association &&
+    !aiMatches(association.proposal, association.validation, query.data);
+  const mlMismatch =
+    !!ml.data && !!association && !mlMatches(association.proposal, association.validation, ml.data);
+  const row = mismatch || query.isError ? null : query.data,
     active = !!row && ['QUEUED', 'PREPARING', 'RUNNING'].includes(row.state);
   const mutation = useMutation({
     mutationFn: (cancel: boolean) => {
@@ -45,7 +57,20 @@ export function ValidationAiPanel({
       <ul className="flex flex-wrap gap-2">
         {value.evidenceIds.map((id) => (
           <li key={id}>
-            <a className="underline focus-visible:outline focus-visible:outline-2" href={href(id)}>
+            <a
+              className="underline focus-visible:outline focus-visible:outline-2"
+              href={href(id)}
+              onClick={() => {
+                const target = document.getElementById(`ai-evidence-${row?.id}-${id}`);
+                let parent = target?.parentElement;
+                while (parent) {
+                  if (parent instanceof HTMLDetailsElement) parent.open = true;
+                  parent = parent.parentElement;
+                }
+                target?.querySelector('details')?.setAttribute('open', '');
+                target?.focus();
+              }}
+            >
               Evidence {id.slice(0, 12)}
             </a>
           </li>
@@ -61,6 +86,10 @@ export function ValidationAiPanel({
         size="sm"
         disabled={
           !eligible ||
+          mismatch ||
+          mlMismatch ||
+          ml.isPending ||
+          ml.isError ||
           !ml.data ||
           !['COMPLETED', 'FAILED', 'CANCELLED'].includes(ml.data.state) ||
           query.isPending ||
@@ -86,6 +115,21 @@ export function ValidationAiPanel({
           AI re-review request unavailable. No proposal, validation or review decision was changed.
         </Alert>
       )}
+      {query.isPending && <p role="status">Loading latest AI re-review...</p>}
+      {query.data === null && <p>No AI re-review recorded. No assessment has been inferred.</p>}
+      {mismatch && (
+        <Alert tone="warning">
+          AI association mismatch. Claims, citations and actions are withheld.
+        </Alert>
+      )}
+      {(mlMismatch || ml.isError) && (
+        <Alert tone="warning">
+          Matching ML prerequisite unavailable. New AI requests are disabled.
+        </Alert>
+      )}
+      <p className="text-xs">
+        Latest recorded re-review for the selected validation; not a complete review history.
+      </p>
       {row && (
         <div className="mt-2 space-y-2 text-xs">
           <p role="status" className="text-sm">
@@ -165,7 +209,12 @@ export function ValidationAiPanel({
             )}
             <ul className="space-y-2">
               {row.evidence.map((e) => (
-                <li id={`ai-evidence-${row.id}-${e.id}`} key={e.id} className="scroll-mt-4">
+                <li
+                  id={`ai-evidence-${row.id}-${e.id}`}
+                  key={e.id}
+                  tabIndex={-1}
+                  className="scroll-mt-4"
+                >
                   <details>
                     <summary>
                       {e.payload.type} · {e.trust} · {e.id.slice(0, 12)}
@@ -173,9 +222,20 @@ export function ValidationAiPanel({
                     <p className="break-all">
                       Source {e.sourceId} · Digest {e.contentDigest}
                     </p>
-                    <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words">
-                      {JSON.stringify(e.payload, null, 2)}
-                    </pre>
+                    <dl className="break-words">
+                      {Object.entries(e.payload).map(([key, value]) => (
+                        <React.Fragment key={key}>
+                          <dt className="font-semibold">{key}</dt>
+                          <dd>
+                            {typeof value === 'object' && value !== null ? (
+                              <EvidenceFields value={value} />
+                            ) : (
+                              String(value ?? 'Unavailable')
+                            )}
+                          </dd>
+                        </React.Fragment>
+                      ))}
+                    </dl>
                   </details>
                 </li>
               ))}
@@ -199,5 +259,24 @@ export function ValidationAiPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function EvidenceFields({ value }: { value: object }) {
+  return (
+    <dl className="ml-2 break-words">
+      {Object.entries(value).map(([key, entry]) => (
+        <React.Fragment key={key}>
+          <dt>{key}</dt>
+          <dd>
+            {typeof entry === 'object' && entry !== null ? (
+              <EvidenceFields value={entry} />
+            ) : (
+              String(entry ?? 'Unavailable')
+            )}
+          </dd>
+        </React.Fragment>
+      ))}
+    </dl>
   );
 }

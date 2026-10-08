@@ -26,7 +26,9 @@ import { RiskPanel } from '@/components/workspace/risk-panel';
 import { SharePanel } from '@/components/workspace/share-panel';
 import { ToolRunsPanel } from '@/components/workspace/tool-runs-panel';
 import { ReviewWorkspace } from '@/components/workspace/review-workspace';
+import { CandidateWorkspace } from '@/components/workspace/candidate-workspace';
 import '@/components/workspace/review-workspace.css';
+import '@/components/workspace/candidate-workspace.css';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { duration, relativeTime, shortSha } from '@/lib/format';
@@ -112,7 +114,21 @@ export default function ReviewWorkspacePage() {
           });
       }}
       support={(mode) => (
-        <div className="review-support-layout">
+        <div
+          className={
+            mode === 'Candidates'
+              ? 'review-support-layout candidate-support-layout'
+              : 'review-support-layout'
+          }
+        >
+          {mode === 'Candidates' && (
+            <CandidateWorkspace
+              key={sessionId}
+              session={data}
+              conversationId={conversationId}
+              selectConversation={setConversationId}
+            />
+          )}
           {mode === 'Discussion' && (
             <>
               <CommentsPanel

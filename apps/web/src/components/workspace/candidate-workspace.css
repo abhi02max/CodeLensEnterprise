@@ -1,0 +1,180 @@
+.candidate-workspace {
+  min-width: 0;
+  color: rgb(var(--cl-text-primary));
+  font-size: 13px;
+}
+.candidate-workspace h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+.candidate-workspace h3,
+.candidate-workspace h4 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.candidate-workspace p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.candidate-workspace details {
+  margin: 12px 0;
+}
+.candidate-workspace summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.candidate-workspace dd {
+  overflow-wrap: anywhere;
+  font-family: monospace;
+  margin-bottom: 8px;
+}
+.candidate-workspace dt {
+  color: rgb(var(--cl-text-secondary));
+}
+.candidate-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.candidate-picker {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+  min-width: 0;
+  max-width: 720px;
+}
+.candidate-picker select {
+  min-width: 0;
+  width: 100%;
+  text-overflow: ellipsis;
+}
+.candidate-revision-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.candidate-revision-picker .candidate-picker {
+  flex: 1;
+}
+.candidate-proposal-heading {
+  border-top: 1px solid rgb(var(--cl-divider));
+  padding: 12px 0;
+}
+.candidate-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 0;
+  border-block: 1px solid rgb(var(--cl-divider));
+}
+.candidate-tabs button[aria-pressed='true'] {
+  background: rgb(var(--cl-selected));
+  color: rgb(var(--cl-selected-text));
+}
+.candidate-code-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  min-height: 300px;
+}
+.candidate-code-layout nav {
+  border-right: 1px solid rgb(var(--cl-divider));
+  padding: 12px 8px 12px 0;
+  min-width: 0;
+}
+.candidate-code-layout nav button {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  text-align: left;
+}
+.candidate-code-layout nav button span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.candidate-code-layout nav svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.candidate-code-layout nav button[aria-current='true'] {
+  background: rgb(var(--cl-selected));
+  color: rgb(var(--cl-selected-text));
+}
+.candidate-patch {
+  min-width: 0;
+  padding: 12px 0 12px 12px;
+}
+.candidate-patch .review-code-scroll {
+  max-height: 65vh;
+}
+.candidate-patch th {
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 8px;
+  color: rgb(var(--cl-text-secondary));
+}
+.candidate-validation {
+  border-top: 1px solid rgb(var(--cl-divider));
+  margin-top: 16px;
+  padding-top: 12px;
+}
+.candidate-checks {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.candidate-checks th,
+.candidate-checks td {
+  padding: 8px;
+  border-bottom: 1px solid rgb(var(--cl-divider));
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.candidate-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.candidate-log {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  background: rgb(var(--cl-surface-subtle));
+}
+.candidate-pages {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+.candidate-decision {
+  padding: 12px 0;
+}
+@media (max-width: 800px) {
+  .candidate-code-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .candidate-code-layout nav {
+    border-right: 0;
+    border-bottom: 1px solid rgb(var(--cl-divider));
+  }
+  .candidate-code-layout nav ul {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .candidate-patch {
+    padding-left: 0;
+  }
+  .candidate-checks {
+    font-size: 12px;
+  }
+  .candidate-checks th,
+  .candidate-checks td {
+    padding: 6px;
+  }
+}
+.candidate-support-layout {
+  max-width: none;
+}

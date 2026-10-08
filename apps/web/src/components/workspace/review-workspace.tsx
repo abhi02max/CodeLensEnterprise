@@ -21,7 +21,7 @@ import { ReviewDiff } from './review-diff';
 import { InvestigationPanel, type InvestigationMode } from './investigation-panel';
 import { currentEvidenceTarget, evidenceCodeAnchor } from '@/lib/investigation-context';
 
-export type ReviewMode = 'Changes' | 'Discussion' | 'Analysis' | 'Decision';
+export type ReviewMode = 'Changes' | 'Candidates' | 'Discussion' | 'Analysis' | 'Decision';
 export function ReviewWorkspace({
   session,
   detail,
@@ -466,20 +466,22 @@ export function ReviewWorkspace({
       </header>
       <div className="review-mode-bar">
         <div role="group" aria-label="Review views">
-          {(['Changes', 'Discussion', 'Analysis', 'Decision'] as const).map((name) => (
-            <Button
-              key={name}
-              size="sm"
-              variant="ghost"
-              aria-pressed={mode === name}
-              onClick={() => {
-                setMode(name);
-                setDrawer(null);
-              }}
-            >
-              {name}
-            </Button>
-          ))}
+          {(['Changes', 'Candidates', 'Discussion', 'Analysis', 'Decision'] as const).map(
+            (name) => (
+              <Button
+                key={name}
+                size="sm"
+                variant="ghost"
+                aria-pressed={mode === name}
+                onClick={() => {
+                  setMode(name);
+                  setDrawer(null);
+                }}
+              >
+                {name}
+              </Button>
+            ),
+          )}
         </div>
         <div className="review-tools">
           <Button
