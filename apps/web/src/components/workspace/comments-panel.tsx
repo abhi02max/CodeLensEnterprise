@@ -41,6 +41,7 @@ export function CommentsPanel({
   currentUserId,
   draftAnchor,
   onClearAnchor,
+  compact = false,
 }: {
   sessionId: string;
   comments: CommentView[];
@@ -49,6 +50,7 @@ export function CommentsPanel({
   currentUserId: string | null;
   draftAnchor: DraftAnchor | null;
   onClearAnchor: () => void;
+  compact?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [body, setBody] = React.useState('');
@@ -123,9 +125,10 @@ export function CommentsPanel({
   const filtered = showResolved ? comments : comments.filter((comment) => !comment.resolvedAt);
   const visible = showAll ? filtered : filtered.slice(0, VISIBLE_THREADS);
   const hidden = filtered.length - visible.length;
+  const Frame = compact ? 'section' : Card;
 
   return (
-    <Card>
+    <Frame>
       <CardHeader
         title="Discussion"
         subtitle={`${comments.length} thread${comments.length === 1 ? '' : 's'}, ${unresolved} open`}
@@ -248,7 +251,7 @@ export function CommentsPanel({
           </p>
         </div>
       )}
-    </Card>
+    </Frame>
   );
 }
 

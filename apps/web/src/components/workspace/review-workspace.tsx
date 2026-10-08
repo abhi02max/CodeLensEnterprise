@@ -18,6 +18,8 @@ import {
 } from '@/lib/review-workspace';
 import type { ReviewSession } from '@/lib/types';
 import { ReviewDiff } from './review-diff';
+import { InvestigationPanel, type InvestigationMode } from './investigation-panel';
+import { currentEvidenceTarget, evidenceCodeAnchor } from '@/lib/investigation-context';
 
 export type ReviewMode = 'Changes' | 'Discussion' | 'Analysis' | 'Decision';
 export function ReviewWorkspace({
@@ -29,6 +31,8 @@ export function ReviewWorkspace({
   refresh,
   support,
   discuss,
+  conversationId = null,
+  selectConversation = () => {},
 }: {
   session: ReviewSession;
   detail?: PrDiffIdentity;
@@ -38,6 +42,8 @@ export function ReviewWorkspace({
   refresh: () => void;
   support: (mode: ReviewMode) => React.ReactNode;
   discuss: (finding: WorkspaceFinding) => void;
+  conversationId?: string | null;
+  selectConversation?: (id: string | null) => void;
 }) {
   const root = React.useRef<HTMLDivElement>(null);
   const center = React.useRef<HTMLDivElement>(null);
@@ -47,6 +53,13 @@ export function ReviewWorkspace({
   const [selectedKey, setSelectedKey] = React.useState<string | null>(null);
   const [drawer, setDrawer] = React.useState<'navigation' | 'context' | null>(null);
   const [wideContext, setWideContext] = React.useState(true);
+  const [desktop, setDesktop] = React.useState(false);
+  const [contextMode, setContextMode] = React.useState<InvestigationMode>('Details');
+  const [sourceTarget, setSourceTarget] = React.useState<{
+    path: string;
+    line: number;
+    headSha: string;
+  } | null>(null);
   const [filter, setFilter] = React.useState('');
   const findings = React.useMemo(() => workspaceFindings(session), [session]);
   const identity =
@@ -54,6 +67,7 @@ export function ReviewWorkspace({
       ? diffIdentity(session, detail, diff)
       : { trusted: false, reason: 'Diff not loaded.' };
   const file = diff?.files.find((f) => f.filename === path) ?? diff?.files[0];
+  const currentTarget = currentEvidenceTarget(sourceTarget, identity, diff?.headSha);
   const selected = findings.find((f) => f.key === selectedKey);
   const fileExplanation = session.aiReview?.fileExplanations.find((f) => f.path === file?.filename);
   const anchors = React.useMemo(() => {
@@ -82,6 +96,13 @@ export function ReviewWorkspace({
       );
     measure();
     window.addEventListener('resize', measure);
+    const media = window.matchMedia('(min-width: 1440px)');
+    const resizeContext = () => {
+      setDesktop(media.matches);
+      if (media.matches) setDrawer(null);
+    };
+    resizeContext();
+    media.addEventListener('change', resizeContext);
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(measure);
@@ -92,20 +113,29 @@ export function ReviewWorkspace({
     if (shellHeader) observer.observe(shellHeader);
     return () => {
       window.removeEventListener('resize', measure);
+      media.removeEventListener('change', resizeContext);
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
   }, []);
   React.useEffect(() => {
+    if (currentTarget && currentTarget.path === file?.filename) {
+      center.current
+        ?.querySelector(`[data-new-line="${currentTarget.line}"]`)
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      return;
+    }
     if (!selected) return;
     const anchor = anchors.get(selected.key);
     if (anchor?.mapped)
       center.current
         ?.querySelector(`[data-new-line="${anchor.line}"]`)
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [selected, file?.filename, anchors]);
+  }, [selected, file?.filename, anchors, currentTarget, mode]);
   const chooseFinding = (finding: WorkspaceFinding) => {
     setSelectedKey(finding.key);
+    setSourceTarget(null);
+    setContextMode('Details');
     if (diff?.files.some((f) => f.filename === finding.path)) setPath(finding.path);
     if (window.innerWidth < 1440 || !wideContext) setDrawer('context');
     else setDrawer(null);
@@ -142,6 +172,7 @@ export function ReviewWorkspace({
                     onClick={() => {
                       setPath(f.filename);
                       setSelectedKey(null);
+                      setSourceTarget(null);
                       setDrawer(null);
                       center.current?.scrollTo(0, 0);
                     }}
@@ -347,6 +378,36 @@ export function ReviewWorkspace({
       </Button>
     </>
   );
+  const contextual = (
+    <InvestigationPanel
+      session={session}
+      finding={selected}
+      path={file?.filename}
+      mode={contextMode}
+      setMode={setContextMode}
+      details={context}
+      conversationId={conversationId}
+      selectConversation={selectConversation}
+      canNavigate={(evidence, call) =>
+        Boolean(evidenceCodeAnchor(evidence, call, call.turnId, identity, diff))
+      }
+      navigate={(evidence, call) => {
+        const target = evidenceCodeAnchor(evidence, call, call.turnId, identity, diff);
+        if (!target) return;
+        setPath(target.path);
+        setSourceTarget({ ...target, headSha: diff!.headSha });
+        setDrawer(null);
+        requestAnimationFrame(() => center.current?.focus());
+      }}
+      returnToCode={() => {
+        setSourceTarget(null);
+        if (selected?.path && diff?.files.some((f) => f.filename === selected.path))
+          setPath(selected.path);
+        setDrawer(null);
+        requestAnimationFrame(() => center.current?.focus());
+      }}
+    />
+  );
   return (
     <div
       className="review-workspace -mx-4 -my-6 sm:-mx-6"
@@ -499,6 +560,9 @@ export function ReviewWorkspace({
                       markers={markers}
                       selectedKey={selectedKey}
                       onSelect={chooseFinding}
+                      sourceLine={
+                        currentTarget?.path === file.filename ? currentTarget.line : undefined
+                      }
                     />
                   ) : (
                     <p className="review-message">
@@ -509,9 +573,9 @@ export function ReviewWorkspace({
                 </>
               )}
             </div>
-            {wideContext && (
+            {wideContext && desktop && (
               <aside className="review-context" aria-label="Selection context">
-                {context}
+                {contextual}
               </aside>
             )}
           </div>
@@ -520,7 +584,7 @@ export function ReviewWorkspace({
             title={drawer === 'navigation' ? 'Files and findings' : 'Selection context'}
             onClose={() => setDrawer(null)}
           >
-            {drawer === 'navigation' ? navigation : context}
+            {drawer === 'navigation' ? navigation : drawer === 'context' ? contextual : null}
           </ReviewDrawer>
         </>
       ) : (

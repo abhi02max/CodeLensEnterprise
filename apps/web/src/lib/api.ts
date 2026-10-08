@@ -225,9 +225,9 @@ export const api = {
         body: { requestId, input },
       },
     ),
-  investigations: (turnId: string) =>
+  investigations: (turnId: string, afterSequence = 0) =>
     apiRequest<{ items: InvestigationResult[]; nextAfterSequence: number | null }>(
-      `/collaboration-turns/${encodeURIComponent(turnId)}/evidence`,
+      `/collaboration-turns/${encodeURIComponent(turnId)}/evidence?afterSequence=${afterSequence}`,
     ),
   investigation: (id: string) =>
     apiRequest<InvestigationResult>(`/collaboration-tools/${encodeURIComponent(id)}`),

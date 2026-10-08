@@ -15,12 +15,14 @@ export const ReviewDiff = React.memo(function ReviewDiff({
   markers,
   selectedKey,
   onSelect,
+  sourceLine,
 }: {
   file: PullRequestFileView;
   identity: DiffIdentity;
   markers: Map<number, WorkspaceFinding[]>;
   selectedKey: string | null;
   onSelect: (finding: WorkspaceFinding) => void;
+  sourceLine?: number;
 }) {
   const show =
     identity.trusted &&
@@ -74,7 +76,7 @@ export const ReviewDiff = React.memo(function ReviewDiff({
                       <tr
                         key={index}
                         data-new-line={line.newLineNumber ?? undefined}
-                        data-selected={selected || undefined}
+                        data-selected={selected || line.newLineNumber === sourceLine || undefined}
                         className={`review-code-${line.type}`}
                       >
                         <td className="review-coordinate">{line.oldLineNumber}</td>

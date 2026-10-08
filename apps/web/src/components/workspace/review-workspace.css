@@ -353,6 +353,47 @@
 .review-drawer-content {
   padding: 12px;
 }
+.investigation-panel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.investigation-panel h2,
+.investigation-panel h3 {
+  font-size: 13px;
+  line-height: 18px;
+  margin: 12px 0 6px;
+}
+.investigation-scope {
+  color: rgb(var(--cl-text-muted));
+  margin-bottom: 4px;
+}
+.investigation-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgb(var(--cl-border));
+}
+.investigation-modes button {
+  padding: 4px 6px;
+  font-size: 12px;
+}
+.investigation-modes button[aria-pressed='true'] {
+  background: rgb(var(--cl-selected));
+  color: rgb(var(--cl-text-primary));
+}
+.investigation-panel details {
+  margin: 8px 0;
+}
+.investigation-panel summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.investigation-assistant {
+  margin-top: 12px;
+  min-width: 0;
+}
 .review-workspace :focus-visible,
 .review-drawer :focus-visible {
   outline: 2px solid rgb(var(--cl-focus));

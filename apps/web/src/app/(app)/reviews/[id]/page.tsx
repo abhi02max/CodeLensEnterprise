@@ -39,6 +39,7 @@ export default function ReviewWorkspacePage() {
   const queryClient = useQueryClient();
   const { user, role } = useSession();
   const [anchor, setAnchor] = React.useState<DraftAnchor | null>(null);
+  const [conversationId, setConversationId] = React.useState<string | null>(null);
   const session = useQuery({
     queryKey: ['review-session', sessionId],
     queryFn: () => api.session_(sessionId),
@@ -98,6 +99,8 @@ export default function ReviewWorkspacePage() {
       diffLoading={detail.isPending || diff.isPending}
       diffError={detail.isError || diff.isError}
       refresh={refresh}
+      conversationId={conversationId}
+      selectConversation={setConversationId}
       discuss={(finding) => {
         const f = finding.staticFinding;
         if (f)
@@ -121,7 +124,13 @@ export default function ReviewWorkspacePage() {
                 draftAnchor={anchor}
                 onClearAnchor={() => setAnchor(null)}
               />
-              <ConversationPanel key={sessionId} sessionId={sessionId} context={data} />
+              <ConversationPanel
+                key={sessionId}
+                sessionId={sessionId}
+                context={data}
+                controlledId={conversationId}
+                onSelectConversation={setConversationId}
+              />
             </>
           )}
           {mode === 'Analysis' && (
