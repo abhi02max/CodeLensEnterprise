@@ -5,10 +5,44 @@ import { usePathname } from 'next/navigation';
 import { FolderGit2, History, ListChecks, LogOut, Menu, X } from 'lucide-react';
 import * as React from 'react';
 import { HealthBanner } from './health-banner';
-import { Button } from './ui/primitives';
+import { Alert, Button } from './ui/primitives';
 import { cn } from '@/lib/cn';
 import { isDestinationActive, primaryDestinations, REVIEWS_HOME } from '@/lib/review-inbox';
 import type { Role } from '@/lib/types';
+
+export function SignOutButton({ onSignOut }: { onSignOut: () => void | Promise<void> }) {
+  const inFlight = React.useRef(false);
+  const [pending, setPending] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  async function handleSignOut() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setFailed(false);
+    try {
+      await onSignOut();
+    } catch {
+      setFailed(true);
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
+  }
+  return (
+    <div className="min-w-0">
+      <Button variant="ghost" size="sm" loading={pending} onClick={() => void handleSignOut()}>
+        <LogOut className="h-4 w-4" aria-hidden="true" />
+        <span className="hidden sm:inline">{pending ? 'Signing out' : 'Sign out'}</span>
+        <span className="sr-only sm:hidden">{pending ? 'Signing out' : 'Sign out'}</span>
+      </Button>
+      {failed && (
+        <Alert className="my-2 max-w-xs" title="Sign-out not confirmed">
+          Your session may still be active. Try signing out again.
+        </Alert>
+      )}
+    </div>
+  );
+}
 
 export function PrimaryNav({
   pathname,
@@ -58,7 +92,7 @@ export function AppShell({
   organization?: string;
   name?: string;
   role: Role | null;
-  onSignOut: () => void;
+  onSignOut: () => void | Promise<void>;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
@@ -118,11 +152,7 @@ export function AppShell({
           <span className="hidden max-w-48 break-words text-metadata text-content-muted lg:block">
             {name}
           </span>
-          <Button variant="ghost" size="sm" onClick={onSignOut}>
-            <LogOut className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Sign out</span>
-            <span className="sr-only sm:hidden">Sign out</span>
-          </Button>
+          <SignOutButton onSignOut={onSignOut} />
         </div>
         <HealthBanner />
         <div

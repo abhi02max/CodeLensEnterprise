@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { Github } from 'lucide-react';
 import * as React from 'react';
-import { Alert, Button, Input, Label } from '@/components/ui/primitives';
+import { Alert, Button } from '@/components/ui/primitives';
+import { SignInField } from '@/components/signin-field';
 import { ApiError, API_URL } from '@/lib/api-client';
 import { useSession } from '@/lib/providers';
 
@@ -81,45 +82,30 @@ export default function SignInPage() {
           className="rounded-lg border border-surface-border bg-white p-4"
         >
           <div className="space-y-3">
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                autoFocus
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                aria-invalid={Boolean(error?.fieldErrors?.email) || undefined}
-                className="mt-1"
-                placeholder="you@company.com"
-              />
-              {error?.fieldErrors?.email?.map((message) => (
-                <p key={message} className="mt-1 text-xs text-red-700">
-                  {message}
-                </p>
-              ))}
-            </div>
-
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                aria-invalid={Boolean(error?.fieldErrors?.password) || undefined}
-                className="mt-1"
-              />
-              {error?.fieldErrors?.password?.map((message) => (
-                <p key={message} className="mt-1 text-xs text-red-700">
-                  {message}
-                </p>
-              ))}
-            </div>
+            <SignInField
+              id="email"
+              label="Email"
+              errors={error?.fieldErrors?.email}
+              type="email"
+              autoComplete="username"
+              required
+              autoFocus
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className="mt-1"
+              placeholder="you@company.com"
+            />
+            <SignInField
+              id="password"
+              label="Password"
+              errors={error?.fieldErrors?.password}
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="mt-1"
+            />
           </div>
 
           {error && (
@@ -159,7 +145,7 @@ export default function SignInPage() {
           Sign in with GitHub
         </Button>
 
-        <p className="mt-3 text-center font-mono text-[0.6875rem] text-slate-400">
+        <p className="mt-3 text-center font-mono text-[0.6875rem] text-content-muted">
           API {API_URL}
         </p>
       </div>

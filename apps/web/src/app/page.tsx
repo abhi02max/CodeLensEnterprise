@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { Spinner } from '@/components/ui/primitives';
+import { LoadingRegion } from '@/components/ui/primitives';
 import { useSession } from '@/lib/providers';
 
 /**
@@ -21,10 +21,7 @@ export default function RootPage() {
 
   return (
     <main className="flex h-full items-center justify-center">
-      <div className="flex items-center gap-2 text-sm text-slate-500">
-        <Spinner className="h-4 w-4" />
-        Loading CodeLens
-      </div>
+      <LoadingRegion label="Loading CodeLens" />
     </main>
   );
 }

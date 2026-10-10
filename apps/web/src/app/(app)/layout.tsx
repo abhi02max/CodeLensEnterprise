@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       organization={organizations.find((org) => org.id === activeOrganizationId)?.name}
       name={user?.name}
       role={role}
-      onSignOut={() => void signOut()}
+      onSignOut={signOut}
     >
       {children}
     </AppShell>

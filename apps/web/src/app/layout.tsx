@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from '@/lib/providers';
 
 export const metadata: Metadata = {
-  title: 'CodeLens Enterprise',
+  title: { default: 'CodeLens Enterprise', template: '%s | CodeLens' },
   description: 'AI and ML assisted code review',
 };
 

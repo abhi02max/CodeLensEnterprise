@@ -1,9 +1,54 @@
 'use client';
 
+import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Badge, Card, CardHeader, EmptyState, Skeleton } from '@/components/ui/primitives';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  Skeleton,
+} from '@/components/ui/primitives';
 import { api } from '@/lib/api';
+import { ApiError } from '@/lib/api-client';
 import { relativeTime } from '@/lib/format';
+
+export function ActivityError({
+  error,
+  retry,
+  pending,
+}: {
+  error: unknown;
+  retry: () => void;
+  pending: boolean;
+}) {
+  const status = error instanceof ApiError ? error.status : undefined;
+  const forbidden = status === 403;
+  const unauthorized = status === 401;
+  const message = forbidden
+    ? 'Activity is visible to admins and owners.'
+    : unauthorized
+      ? 'Your session could not be confirmed. Sign in again to view activity.'
+      : error instanceof ApiError && error.code === 'NETWORK_ERROR'
+        ? 'Activity could not be reached. Check your connection and try again.'
+        : status !== undefined && status >= 500
+          ? 'The activity service is unavailable. Try again.'
+          : 'Activity could not be loaded. Try again.';
+  return (
+    <div className="px-4 py-3">
+      <Alert tone={forbidden || unauthorized ? 'info' : 'danger'} title="Activity unavailable">
+        <p>{message}</p>
+      </Alert>
+      {!forbidden && !unauthorized && (
+        <Button className="mt-2" size="sm" loading={pending} onClick={retry}>
+          Retry activity
+        </Button>
+      )}
+    </div>
+  );
+}
 
 /**
  * Activity feed from the audit trail.
@@ -39,10 +84,11 @@ export function ActivityPanel({
           ))}
         </div>
       ) : logs.error ? (
-        <div className="px-4 py-3 text-xs text-slate-500">
-          {/* An ADMIN-only endpoint: a developer seeing this panel empty is expected, not broken. */}
-          Activity is visible to admins and owners.
-        </div>
+        <ActivityError
+          error={logs.error}
+          retry={() => void logs.refetch()}
+          pending={logs.isFetching}
+        />
       ) : logs.data && logs.data.items.length === 0 ? (
         <EmptyState title="No recorded activity" />
       ) : (
@@ -58,7 +104,7 @@ export function ActivityPanel({
                 <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
                   {entry.actor ? entry.actor.name : entry.actorType.toLowerCase()}
                 </span>
-                <span className="shrink-0 text-xs text-slate-400">
+                <span className="shrink-0 text-xs text-content-muted">
                   {relativeTime(entry.createdAt)}
                 </span>
               </div>
