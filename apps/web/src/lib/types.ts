@@ -310,6 +310,7 @@ export interface MetricsView {
 
 export interface ReviewView {
   id: string;
+  pullRequestId?: string;
   reviewer: { id: string; name: string; avatarUrl: string | null };
   verdict: ReviewVerdict;
   summary: string | null;
@@ -317,6 +318,7 @@ export interface ReviewView {
   stale: boolean;
   dismissedFindingCount: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ReviewGateStatus {

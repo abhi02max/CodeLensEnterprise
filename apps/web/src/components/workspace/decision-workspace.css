@@ -1,0 +1,141 @@
+.decision-support-layout {
+  display: block;
+}
+.decision-workspace {
+  min-width: 0;
+  width: 100%;
+  color: rgb(var(--cl-text-primary));
+}
+.decision-workspace h2 {
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.decision-workspace h3 {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+.decision-workspace p {
+  margin: 6px 0;
+}
+.decision-workspace p,
+.decision-workspace li,
+.decision-workspace dd {
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.decision-workspace code,
+.decision-confirmation code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 12px;
+}
+.decision-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+.decision-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 20px;
+}
+.decision-grid > div {
+  min-width: 0;
+}
+.decision-grid section {
+  border-top: 1px solid rgb(var(--cl-divider));
+  padding-top: 12px;
+  margin-bottom: 20px;
+}
+.decision-identity,
+.decision-evidence dl {
+  margin: 12px 0;
+}
+.decision-identity > div,
+.decision-evidence dl > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 12px;
+  margin: 8px 0;
+}
+.decision-workspace dt {
+  color: rgb(var(--cl-text-secondary));
+  font-size: 12px;
+}
+.decision-workspace dd {
+  margin: 0;
+}
+.decision-history ol,
+.decision-sharing ul {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.decision-history li,
+.decision-sharing li {
+  padding: 12px 0;
+  border-top: 1px solid rgb(var(--cl-divider));
+}
+.decision-history-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.decision-rationale {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.decision-confirmation {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid rgb(var(--cl-divider));
+  border-radius: 6px;
+  padding: 20px;
+  background: rgb(var(--cl-surface));
+  color: rgb(var(--cl-text-primary));
+}
+.decision-confirmation::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.decision-confirmation h2 {
+  font-size: 18px;
+  line-height: 26px;
+  margin: 0 0 12px;
+}
+.decision-confirmation-body {
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.decision-confirmation :focus-visible,
+.decision-workspace :focus-visible {
+  outline: 2px solid rgb(var(--cl-focus));
+  outline-offset: 2px;
+}
+.decision-sharing-form {
+  max-width: 560px;
+}
+.decision-sharing-form > div {
+  margin: 12px 0;
+}
+@media (max-width: 800px) {
+  .decision-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .decision-identity > div,
+  .decision-evidence dl > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}

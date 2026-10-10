@@ -183,7 +183,7 @@ Check 'shared payload has no api key fragment' (-not ($sharedJson -match 'sk-'))
 Check 'shared payload has no tool run id' (-not ($sharedJson -match $ws.toolRuns[0].id))
 
 $webShareUrl = "$web/shared/$($link.token)"
-Check 'share url points at the web app route shape' ($link.url -match '/shared/review/')
+Check 'share url points at the web app route shape' ($link.url -eq $webShareUrl)
 Write-Host "  web share route to open: $webShareUrl"
 
 # ---------------------------------------------------------------- web routes

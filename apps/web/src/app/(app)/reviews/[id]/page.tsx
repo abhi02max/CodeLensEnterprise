@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import * as React from 'react';
@@ -14,21 +14,19 @@ import {
   CardHeader,
   Field,
   Skeleton,
-  Textarea,
 } from '@/components/ui/primitives';
-import { ActivityPanel } from '@/components/workspace/activity-panel';
+import { DecisionWorkspace } from '@/components/workspace/decision-workspace';
 import { AiReviewPanel } from '@/components/workspace/ai-review-panel';
 import { CommentsPanel, type DraftAnchor } from '@/components/workspace/comments-panel';
 import { ContextPanel } from '@/components/workspace/context-panel';
 import { ConversationPanel } from '@/components/workspace/conversation-panel';
-import { GatePanel } from '@/components/workspace/gate-panel';
 import { RiskPanel } from '@/components/workspace/risk-panel';
-import { SharePanel } from '@/components/workspace/share-panel';
 import { ToolRunsPanel } from '@/components/workspace/tool-runs-panel';
 import { ReviewWorkspace } from '@/components/workspace/review-workspace';
 import { CandidateWorkspace } from '@/components/workspace/candidate-workspace';
 import '@/components/workspace/review-workspace.css';
 import '@/components/workspace/candidate-workspace.css';
+import '@/components/workspace/decision-workspace.css';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { duration, relativeTime, shortSha } from '@/lib/format';
@@ -42,11 +40,20 @@ export default function ReviewWorkspacePage() {
   const { user, role } = useSession();
   const [anchor, setAnchor] = React.useState<DraftAnchor | null>(null);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [decisionPin, setDecisionPin] = React.useState<{ sessionId: string; head: string } | null>(
+    null,
+  );
   const session = useQuery({
     queryKey: ['review-session', sessionId],
     queryFn: () => api.session_(sessionId),
   });
   const prId = session.data?.pullRequestId;
+  React.useEffect(() => {
+    if (session.data)
+      setDecisionPin((pin) =>
+        pin?.sessionId === sessionId ? pin : { sessionId, head: session.data!.pullRequest.headSha },
+      );
+  }, [sessionId, session.data]);
   const detail = useQuery({
     queryKey: ['workspace-pr', prId],
     queryFn: async () => {
@@ -118,7 +125,9 @@ export default function ReviewWorkspacePage() {
           className={
             mode === 'Candidates'
               ? 'review-support-layout candidate-support-layout'
-              : 'review-support-layout'
+              : mode === 'Decision'
+                ? 'review-support-layout decision-support-layout'
+                : 'review-support-layout'
           }
         >
           {mode === 'Candidates' && (
@@ -219,173 +228,29 @@ export default function ReviewWorkspacePage() {
             </>
           )}
           {mode === 'Decision' && (
-            <>
-              <GatePanel gate={data.gate} />
-              <VerdictPanel sessionId={sessionId} session={data} />
-              <SharePanel
-                sessionId={sessionId}
-                shareLinks={data.shareLinks}
-                permissions={data.permissions}
-              />
-              {(role === 'ADMIN' || role === 'OWNER') && (
-                <ActivityPanel title="Recent organization activity" limit={6} />
-              )}
-            </>
+            <DecisionWorkspace
+              session={data}
+              target={
+                detail.data && !detail.isError
+                  ? {
+                      id: detail.data.id,
+                      repositoryId: detail.data.repository.id,
+                      headSha: detail.data.headSha,
+                    }
+                  : undefined
+              }
+              currentUserId={user?.id ?? null}
+              refresh={refresh}
+              initialReviewedHead={
+                decisionPin?.sessionId === sessionId ? decisionPin.head : undefined
+              }
+              onReviewedHead={(head) => setDecisionPin({ sessionId, head })}
+              auditAllowed={role === 'ADMIN' || role === 'OWNER'}
+            />
           )}
         </div>
       )}
     />
-  );
-}
-
-function VerdictPanel({
-  sessionId,
-  session,
-}: {
-  sessionId: string;
-  session: import('@/lib/types').ReviewSession;
-}) {
-  const queryClient = useQueryClient();
-  const [summary, setSummary] = React.useState('');
-  const [error, setError] = React.useState<string | null>(null);
-  const [headChanged, setHeadChanged] = React.useState(false);
-
-  const onError = (caught: unknown) => {
-    setError(caught instanceof ApiError ? caught.message : 'Could not submit the verdict');
-    setHeadChanged(caught instanceof ApiError && caught.status === 409);
-  };
-
-  const refresh = () => {
-    setSummary('');
-    void queryClient.invalidateQueries({ queryKey: ['review-session', sessionId] });
-    void queryClient.invalidateQueries({ queryKey: ['pull-requests'] });
-  };
-
-  const approve = useMutation({
-    mutationFn: () =>
-      api.approve(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
-    onMutate: () => setError(null),
-    onSuccess: refresh,
-    onError,
-  });
-
-  const requestChanges = useMutation({
-    mutationFn: () =>
-      api.requestChanges(sessionId, session.pullRequest.headSha, summary.trim() || undefined),
-    onMutate: () => setError(null),
-    onSuccess: refresh,
-    onError,
-  });
-
-  const refreshReview = useMutation({
-    mutationFn: () =>
-      queryClient.invalidateQueries(
-        { queryKey: ['review-session', sessionId] },
-        { throwOnError: true },
-      ),
-    onMutate: () => setSummary(''),
-    onSuccess: () => {
-      setError(null);
-      setHeadChanged(false);
-    },
-    onError: () => setError('Could not refresh the review. Try again before submitting a verdict.'),
-  });
-
-  const { permissions } = session;
-  const busy = approve.isPending || requestChanges.isPending || refreshReview.isPending;
-
-  return (
-    <Card>
-      <CardHeader
-        title="Your verdict"
-        subtitle={`Applies to ${shortSha(session.pullRequest.headSha)}`}
-      />
-      <CardBody className="space-y-2.5">
-        <p className="text-xs text-slate-500">
-          This verdict concerns the PR head, not the isolated candidate. Accepting or validating a
-          proposal does not change the PR branch.
-        </p>
-        {session.reviews.length > 0 && (
-          <ul className="space-y-1 border-b border-surface-border pb-2">
-            {session.reviews.map((review) => (
-              <li key={review.id} className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-xs text-slate-700">{review.reviewer.name}</span>
-                <span className="flex shrink-0 items-center gap-1">
-                  <Badge
-                    tone={
-                      review.verdict === 'APPROVED'
-                        ? 'success'
-                        : review.verdict === 'CHANGES_REQUESTED'
-                          ? 'danger'
-                          : 'warning'
-                    }
-                  >
-                    {review.verdict.replace(/_/g, ' ').toLowerCase()}
-                  </Badge>
-                  {/* A verdict against an older commit no longer counts, so it is labelled. */}
-                  {review.stale && <Badge tone="neutral">stale</Badge>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {permissions.canApprove || permissions.canRequestChanges ? (
-          <>
-            <Textarea
-              rows={2}
-              value={summary}
-              onChange={(event) => setSummary(event.target.value)}
-              placeholder="Optional summary for your verdict"
-              aria-label="Verdict summary"
-            />
-
-            {error && <Alert tone="danger">{error}</Alert>}
-            {headChanged && (
-              <Button disabled={busy} onClick={() => refreshReview.mutate()}>
-                Refresh review
-              </Button>
-            )}
-
-            <div className="flex gap-2">
-              <Button
-                variant="approve"
-                className="flex-1"
-                loading={approve.isPending}
-                disabled={!permissions.canApprove || busy || headChanged}
-                title={permissions.deniedReasons.canApprove}
-                onClick={() => approve.mutate()}
-              >
-                Approve
-              </Button>
-              <Button
-                variant="reject"
-                className="flex-1"
-                loading={requestChanges.isPending}
-                disabled={!permissions.canRequestChanges || busy || headChanged}
-                onClick={() => requestChanges.mutate()}
-              >
-                Request changes
-              </Button>
-            </div>
-
-            {/*
-              The reason approval is unavailable is shown rather than left as a dead button. The
-              common case is being the author of the change, which is not obvious from a greyed
-              control.
-            */}
-            {!permissions.canApprove && permissions.deniedReasons.canApprove && (
-              <p className="text-xs text-slate-500">{permissions.deniedReasons.canApprove}</p>
-            )}
-          </>
-        ) : (
-          <p className="text-xs text-slate-500">
-            {permissions.deniedReasons.canApprove ??
-              'Your role does not allow submitting a verdict on this pull request.'}
-          </p>
-        )}
-      </CardBody>
-    </Card>
   );
 }
 

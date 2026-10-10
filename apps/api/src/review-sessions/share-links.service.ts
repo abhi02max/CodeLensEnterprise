@@ -332,5 +332,5 @@ function toShareLinkView(
 
 /** Build the full shareable URL. Only reachable at creation, when the token still exists. */
 export function shareUrlFor(webUrl: string, token: string): string {
-  return `${webUrl.replace(/\/$/, '')}/shared/review/${token}`;
+  return `${webUrl.replace(/\/$/, '')}/shared/${token}`;
 }
