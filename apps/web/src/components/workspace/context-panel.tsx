@@ -47,7 +47,7 @@ export function ContextPanel({ context }: { context: RagContextSummary }) {
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate font-mono text-slate-700">
                   {chunk.path}
-                  {chunk.symbol && <span className="text-slate-400"> · {chunk.symbol}</span>}
+                  {chunk.symbol && <span className="text-content-muted"> · {chunk.symbol}</span>}
                 </span>
                 <span className="numeric shrink-0 text-slate-500">{chunk.score.toFixed(2)}</span>
               </div>
@@ -60,7 +60,7 @@ export function ContextPanel({ context }: { context: RagContextSummary }) {
                   </Badge>
                 ))}
                 {chunk.forFilePath && (
-                  <span className="truncate text-slate-400">for {chunk.forFilePath}</span>
+                  <span className="truncate text-content-muted">for {chunk.forFilePath}</span>
                 )}
               </div>
 

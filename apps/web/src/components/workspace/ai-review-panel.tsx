@@ -157,7 +157,7 @@ export function AiReviewPanel({
                     <p className="text-xs font-medium text-slate-800">
                       {item.item}
                       {item.fromPolicy && (
-                        <span className="ml-1 font-normal text-slate-400">(policy)</span>
+                        <span className="ml-1 font-normal text-content-muted">(policy)</span>
                       )}
                     </p>
                     {item.rationale && <p className="text-xs text-slate-500">{item.rationale}</p>}
@@ -306,7 +306,7 @@ function Collapsible({ title, children }: { title: string; children: React.React
   return (
     <details className="group rounded border border-surface-border">
       <summary className="cursor-pointer list-none px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-surface-subtle">
-        <span className="inline-block w-3 text-slate-400 group-open:rotate-90">›</span>
+        <span className="inline-block w-3 text-content-muted group-open:rotate-90">›</span>
         {title}
       </summary>
       <div className="border-t border-surface-border px-2.5 py-2">{children}</div>

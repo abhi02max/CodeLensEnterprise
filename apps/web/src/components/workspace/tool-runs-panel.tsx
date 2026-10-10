@@ -26,7 +26,7 @@ export function ToolRunsPanel({ toolRuns }: { toolRuns: ToolRunSummary[] }) {
       <ol className="divide-y divide-surface-border">
         {toolRuns.map((run) => (
           <li key={run.id} className="flex items-center gap-2 px-4 py-1.5">
-            <span className="numeric w-4 shrink-0 text-xs text-slate-400">{run.sequence}</span>
+            <span className="numeric w-4 shrink-0 text-xs text-content-muted">{run.sequence}</span>
             <span className="min-w-0 flex-1 truncate text-xs text-slate-700">
               {toolLabel(run.tool)}
             </span>
@@ -45,7 +45,7 @@ export function ToolRunsPanel({ toolRuns }: { toolRuns: ToolRunSummary[] }) {
               {run.status.toLowerCase()}
             </Badge>
 
-            <span className="numeric w-14 shrink-0 text-right text-xs text-slate-400">
+            <span className="numeric w-14 shrink-0 text-right text-xs text-content-muted">
               {duration(run.durationMs)}
             </span>
           </li>

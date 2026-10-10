@@ -585,6 +585,7 @@ export function ReviewWorkspace({
             open={drawer !== null}
             title={drawer === 'navigation' ? 'Files and findings' : 'Selection context'}
             onClose={() => setDrawer(null)}
+            fallbackFocus={center}
           >
             {drawer === 'navigation' ? navigation : drawer === 'context' ? contextual : null}
           </ReviewDrawer>
@@ -609,11 +610,13 @@ function ReviewDrawer({
   open,
   title,
   onClose,
+  fallbackFocus,
   children,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
+  fallbackFocus: React.RefObject<HTMLDivElement | null>;
   children: React.ReactNode;
 }) {
   const ref = React.useRef<HTMLDialogElement>(null);
@@ -624,12 +627,12 @@ function ReviewDrawer({
       ref.current?.showModal();
     } else if (!open && ref.current?.open) {
       ref.current.close();
-      if (origin.current?.isConnected) origin.current.focus();
+      restoreReviewFocus(origin.current, fallbackFocus.current);
     }
-  }, [open]);
+  }, [open, fallbackFocus]);
   React.useEffect(
     () => () => {
-      if (origin.current?.isConnected) origin.current.focus();
+      restoreReviewFocus(origin.current, null);
     },
     [],
   );
@@ -658,4 +661,11 @@ function ReviewDrawer({
       <div className="review-drawer-content">{children}</div>
     </dialog>
   );
+}
+
+export function restoreReviewFocus(origin: HTMLElement | null, fallback: HTMLElement | null) {
+  const target = [origin, fallback].find(
+    (element) => element?.isConnected && element.getClientRects().length > 0,
+  );
+  target?.focus();
 }

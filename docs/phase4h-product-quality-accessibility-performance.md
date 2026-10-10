@@ -416,3 +416,204 @@ and Phase 3C/provider limitations above remain disclosed and untouched.
 
 Proposed commit subject: `fix(web): improve authentication and application UX`.
 Stop before commit/push; do not start 4H-B, 4H-C or 4I.
+
+## Phase 4H-B: Accessibility and Responsive Containment
+
+This section records new 4H-B work, not a reinterpretation of the historical
+discovery or 4H-A results above. Starting HEAD is
+`2a759e9b1cd4f608c6d04c50dfe3546d0200ef89`; its existing hosted CI run is
+[38032997240](https://github.com/abhi02max/CodeLensEnterprise/actions/runs/38032997240).
+That run certifies the starting revision, not this uncommitted changeset.
+The starting tracked tree was clean; only the protected untracked 4A audit was
+present. No commit, push or later-phase implementation is authorized here.
+
+### Verified Defects and Bounded Corrections
+
+| ID / severity | Reproduction and actual browser evidence                                                                                                                                                     | Root cause / exact correction                                                                                                                                                                                                                  | Regression evidence                                                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 4HB-001 / P2  | Open Selection context at 800px, widen to 1440px so the opener disappears, then close the drawer. Before: active element becomes BODY.                                                       | The connected opener was focused even when hidden by the breakpoint. Restore focus only to a connected element with a rendered rectangle; otherwise use the existing named PR changes region. No selection or provenance change.               | Final production browser restores focus to the visible changes region; four focused tests cover visible, hidden, disconnected and absent targets. This is not a universal visibility detector.                                 |
+| 4HB-002 / P2  | At 320x450, the diff reading region was 11px high and started below the viewport; at 640x450 and 960x450 it was 108px and 181px.                                                             | Fixed workspace height minus stacked controls collapsed its inner flex region. Only below 600px viewport height, use document reflow with bounded inner scrolling and a 200px minimum reading region. Normal 900px-high layouts are unchanged. | Final reading heights are 200px at all three sizes. Focus scrolls the narrow reading region into view; document containment and primary-action checks pass.                                                                    |
+| 4HB-003 / P2  | Real seeded Analysis contains pale policy/disclosure, risk denominator, context symbol/target and pipeline sequence/timing metadata. Discussion also has pale comment-kind/timestamp labels. | These observed elements used slate-400 on a light background. Replace only those classes with the existing semantic muted token. No palette redesign, missing-state edit or risk/data change.                                                  | 33 matched rendered Analysis samples improve from 2.56:1 to 7.73:1 on white. Discussion uses the same token but is not counted in that 33-sample comparison. Two focused rendering tests preserve source/score/status meaning. |
+
+No broad rewrite or 4H-B1/B2 split was needed for these three bounded groups.
+Source-only wrapping guesses were not promoted into defects. Native dialog
+behavior was retained; no custom focus trap or auth behavior was introduced.
+
+### Exact Proposed Inventory
+
+Eight modified files and one added test, **nine files total**:
+
+- `apps/web/src/components/workspace/review-workspace.tsx`
+- `apps/web/src/components/workspace/review-workspace.css`
+- `apps/web/src/components/workspace/ai-review-panel.tsx`
+- `apps/web/src/components/workspace/comments-panel.tsx`
+- `apps/web/src/components/workspace/context-panel.tsx`
+- `apps/web/src/components/workspace/risk-panel.tsx`
+- `apps/web/src/components/workspace/tool-runs-panel.tsx`
+- `apps/web/test/workspace-accessibility.test.tsx` (added)
+- `docs/phase4h-product-quality-accessibility-performance.md`
+
+Backend, auth, shared contracts, dependencies, CI, providers, migrations and
+execution/polling handlers are untouched. Test-only React runtime adaptation is
+confined to the new node:test file and restored after its rendering tests.
+No synthetic identity or response fixture is embedded in production code.
+
+### New Automated and Build Evidence
+
+- Focused tests: **6 passed**, covering drawer focus fallback and contrast
+  metadata rendering without changing recorded source, score or status.
+- Full frontend tests: **274 passed, 0 failed, 0 skipped**; baseline was 268.
+- Workspace tests: **907 passed, 21 skipped**, executed anew via `pnpm test`.
+  The root command excludes the separately executed frontend suite; totals
+  are not represented as coverage percentages or combined duplicate counts.
+- Sequential workspace typecheck: **passed** via
+  `pnpm -r --workspace-concurrency=1 --if-present typecheck`.
+- Final production Next build: **passed**. Tested build ID:
+  `EmUFASPb01rrLC1dir4Kb`. Baseline measured build:
+  `iXtnxQmq1OE7o3WBYX5Ms`.
+- Fresh isolated normal database initialization deployed **all 12 migrations**,
+  verified RAG infrastructure and then ran the documented authorized demo seed.
+  The cached existing API Docker build passed as runtime setup; no backend
+  source change or new backend capability is implied.
+- Deterministic source scanner: **69 files, 0 errors, 7 warnings, 81 suggestions**,
+  unchanged in disposition. It is not an automated WCAG audit.
+
+### Production Browser Matrix and Evidence Boundary
+
+Final-build containment audit: **202 assertions passed**, **97 layout
+observations**. Separate conversation/evidence regression: **17 assertions
+passed**. Candidate/reflow/contrast drill records measurements separately rather
+than counting each measurement as a passed browser assertion.
+
+| Surface                                                  | Actual widths / states checked                                                                       | Evidence source and boundary                                                                                                                                                                                                                                        |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in, dashboard, repositories, activity, review modes | 1920, 1440, 1280, 1100, 800, 768, 390, 360, 320; Changes, Discussion, Candidates, Analysis, Decision | Real seeded API and real authentication. Seeded diff remains UNVERIFIED; empty candidate/readback states are not invented.                                                                                                                                          |
+| Long verified diff, files/findings and drawers           | All nine widths plus 1439, 1024, 1023, 767, 480, 640                                                 | SYNTHETIC GET-only contract-compatible diff; intentional inner horizontal code scrolling remains distinct from document overflow. Escape, focus return, resize-hidden opener and primary action bounds checked.                                                     |
+| Conversation, evidence and source mapping                | Focused selection/revision checks                                                                    | SYNTHETIC GET-only; exact HEAD evidence maps to NEW line 12, finding line 11 remains selected, revision B invalidates the old highlight. Historical mismatch and explicit valid-context reselection are checked. No conversation/tool execution or database writes. |
+| Candidate evaluation and paired check tables             | All nine widths                                                                                      | SYNTHETIC GET-only selected candidate/readback. Long code stays in its own region; file controls have visible 2px focus outlines. No materialization, validation or provider execution.                                                                             |
+| Shared reader                                            | All nine widths for long-title FULL/no-analysis view; intercepted unavailable/passphrase states      | SYNTHETIC GET-only intercepted before public API; no real share access, view counter or share audit mutation. Existing payload allowlist remains unchanged.                                                                                                         |
+| Short-height reflow                                      | 960x450, 640x450, 320x450                                                                            | Half-size CSS viewport checks represent 200%-style layout reflow. They are not an actual browser zoom-control or assistive-technology certification.                                                                                                                |
+| Reduced motion                                           | Computed existing spinner/transition rules                                                           | Under reduced-motion preference, inspected animation/transition behavior is disabled. No decorative motion or global motion redesign added.                                                                                                                         |
+
+Accessible names, status semantics and landmarks were inspected on exercised
+controls. Keyboard checks cover file/finding/context selection, code-region
+focus, drawer Escape/restoration and narrow navigation. Decision preview tests
+do not activate its submit action. Color-independent provenance labels remain
+VERIFIED / UNVERIFIED / PARTIAL / UNAVAILABLE; no source anchors, full-file
+contents or revision authority are fabricated by a product change.
+
+### Screenshots and Measurement Limits
+
+Screenshots remain outside Git under the visualization root in `phase4h-b`,
+`phase4h-b-context` and `phase4h-b-auth`. The initial real decision screenshot
+and final short-height 320px screenshot were visually inspected. Baseline and
+final dimensions/focus/contrast are recorded separately in ignored JSON.
+The synthetic diff screenshot filenames were reused on the final run; they
+are not retained paired before/after image evidence. No baseline short-height
+screenshot was retained, so the numerical comparison is not represented as
+a paired image comparison.
+
+Contrast uses computed opaque foreground/background and relative luminance:
+`rgb(148,163,184)` on white, **2.564:1**, becomes `rgb(82,82,91)` on white,
+**7.730:1**, for the 33 matched Analysis samples. No claim is made for every
+color, opacity, disabled state, edited-comment label or unrendered metadata.
+
+At 320px the Analysis support scroller still has a measured 330px internal
+scroll width, including intentionally scrollable/truncated content. The document
+and tested primary controls remain contained. Its full cause and all historical
+clipping observations are not declared resolved by this narrow changeset.
+
+### Authentication Harness and Diagnostic Disposition
+
+Authentication remains real: no endpoint, cookie, identity, membership, role or
+authorization mock. Root pending state uses a bounded artificial response delay
+without replacing its response. An extended regression attempt passed 37 checks
+before navigation failed with a suspended request; the isolated API recorded no
+throttling on that attempt. A faster retry passed 74 checks before the API
+returned 429. The test had delayed every refresh response instead of only the
+initial loading check. Final harness navigation is paced before requests to
+respect the unchanged rate limit; no production auth policy is modified.
+Interrupted refresh recovery is not newly certified. Expected 401 and synthetic
+error diagnostics are retained, not hidden or counted as runtime exceptions.
+
+### Security, Cleanup and Freeze Gate
+
+**4H_B_READY_TO_FREEZE** for the bounded corrections and tested states above.
+Stop before commit/push; do not start 4H-C or 4I.
+
+Final real-auth/dialog regression: **163 assertions passed** against the same
+final production build. Nine-width decision previews place initial focus on
+Cancel, Tab reaches Confirm without activating it, and Escape restores the
+opener. History and empty share metadata remain truthful. Invalid credential
+login, manual keyboard login, cookie refresh, logout, protected routes and real
+developer activity denial pass. The independent GitHub control remains visible;
+no OAuth request executes. Total separately recorded final browser assertions:
+**202 + 17 + 163 = 382**, excluding measurement-only drills.
+
+The final authentication run recorded **284 API requests**: 67 real refresh POSTs,
+3 real sign-in POSTs (invalid, owner, developer), 2 real sign-out POSTs, 55 real
+session GETs, 147 other real product/health GETs and 10 synthetic product GETs.
+The containment audit separately recorded 335 API requests, and the drill 125.
+Conversation fixture logs include interception/fallback observations; those
+are not summed as unique network requests. All completed drivers recorded zero
+forbidden operations and zero browser runtime exceptions. Expected 401, 403,
+404, synthetic transport/500/422 and navigation-aborted diagnostics remain
+visible. The earlier failed attempts remain disclosed above.
+
+Only approved initialization/seed and ordinary authentication/session activity
+write to the isolated runtime. All **49 product-table fingerprints remain
+identical** before/after browser work; User, Account and AuditLog are excluded
+because authentication/session activity can change them. No synthetic product
+records are written. No analysis, investigation, RAG indexing, comment,
+conversation, proposal, candidate, validation, ML/AI reassessment, verdict,
+share creation, provider or GitHub operation is invoked. Public share GETs are
+intercepted before the API. Request logs contain method, sanitized path and
+source only, not bodies, headers or credentials.
+
+Fresh disposable resources, all removed:
+
+- Project: `codelens_phase4hb_accessibility_20261010`.
+- Containers: project `-postgres-1`, `-redis-1`, `-api-1`.
+- Networks: project `_default` and `_loopback`.
+- Database/user: `codelens_4hb`; PostgreSQL `/var/lib/postgresql/data` and Redis
+  `/data` use tmpfs; no named data volume is created.
+- Loopback ports: PostgreSQL 56482, Redis 56382, API 55482, Next 53482.
+- Unique API image: `codelens-phase4hb-accessibility-20261010:api`, removed.
+
+Workers/brokers/ML are absent, and external integration credentials are absent.
+All owned containers, networks, temporary database data and runtime/browser
+processes are removed; all four ports have zero listeners. Prior container and
+volume identities remain present. No previous certified resource is reused,
+started, modified or removed. Ignored `.codelens-tmp/phase4h-b/` drivers/config/
+JSON and external screenshots remain local only, excluded from Git and Docker
+images by the existing rules.
+
+All 12 migrations and lock remain byte-identical to starting HEAD, with the
+required baseline/diff/lock/audit hashes unchanged. The 4A audit remains untracked
+and untouched. The report's entire historical prefix is preserved. No file is
+staged; the nine-file inventory is the complete proposed changeset.
+
+`git diff --check` and scoped formatting/integrity checks pass subject to existing
+debt. Tracked Prettier is **135 baseline / 135 current**, identical failing set,
+no new failure. Three touched files already have formatting debt:
+`ai-review-panel.tsx`, `risk-panel.tsx`, `comments-panel.tsx`; they are not
+mass-formatted. Other touched files and the added test pass scoped formatting.
+No Python changes; Ruff is not rerun and its known debt remains disclosed.
+Scoped credential-value patterns find zero matches in the nine proposed files;
+this is not universal leak certification.
+
+Final adversarial review finds no repository writes, unsafe source rendering,
+new request/polling/execution trigger, authorization change, synthetic production
+fixture, cross-candidate evidence change, fabricated provenance, acceptance
+change, share exposure, provider budget change or later-phase implementation.
+Focus fallback is limited to existing rendered regions, CSS reflow is confined
+to short viewports, and semantic-color edits do not modify recorded data.
+
+Proposed commit subject: `fix(web): improve workspace focus reflow and contrast`.
+
+Known risk-score drift, existing formatting/Ruff debt, historical clipping and
+Phase 3C/provider limitations above remain unchanged. Formal WCAG compliance,
+screen-reader output, exhaustive accessibility, all browsers/platforms, actual
+zoom-control behavior, live provider/remote freshness and production readiness
+are not established. Performance/stress optimization remains deferred to 4H-C;
+final release/exact-revision certification remains deferred to Phase 4I.

@@ -231,7 +231,7 @@ export function CommentsPanel({
           )}
 
           <div className="mt-2 flex items-center justify-between">
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-content-muted">
               {replyTo ? 'Reply' : draftAnchor ? 'Finding comment' : 'General comment'}
             </span>
             <Button
@@ -317,7 +317,7 @@ function CommentBody({ comment }: { comment: CommentView }) {
           {comment.author?.name ?? (comment.origin === 'AI' ? 'CodeLens AI' : 'Removed user')}
         </span>
         {comment.origin === 'AI' && <Badge tone="info">ai</Badge>}
-        <span className="text-xs text-slate-400">{relativeTime(comment.createdAt)}</span>
+        <span className="text-xs text-content-muted">{relativeTime(comment.createdAt)}</span>
         {comment.editedAt && <span className="text-xs text-slate-400">· edited</span>}
         {comment.findingFingerprint && (
           <Badge tone="outline" title="Resolving this thread clears the finding from the merge gate">

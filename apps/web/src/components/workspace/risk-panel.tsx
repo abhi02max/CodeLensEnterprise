@@ -42,7 +42,7 @@ export function RiskPanel({ risk }: { risk: RiskView | null }) {
           <div className="flex items-baseline justify-between">
             <span className="numeric text-3xl font-semibold tracking-tight text-slate-900">
               {risk.score}
-              <span className="text-base font-normal text-slate-400">/100</span>
+              <span className="text-base font-normal text-content-muted">/100</span>
             </span>
             <span className="text-xs text-slate-500">
               confidence {Math.round(risk.confidence * 100)}%

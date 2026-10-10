@@ -449,3 +449,24 @@
     padding: 12px;
   }
 }
+
+/* Short viewports need document reflow, not a collapsed inner workspace. */
+@media (max-height: 600px) {
+  .review-workspace {
+    height: auto;
+    overflow: visible;
+  }
+  .review-workspace-body {
+    flex: none;
+  }
+  .review-code-center,
+  .review-navigation,
+  .review-context,
+  .review-support-scroll {
+    max-height: 70dvh;
+  }
+  .review-code-center,
+  .review-support-scroll {
+    min-height: 200px;
+  }
+}
