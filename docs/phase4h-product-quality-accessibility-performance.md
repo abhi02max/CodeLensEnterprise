@@ -617,3 +617,283 @@ screen-reader output, exhaustive accessibility, all browsers/platforms, actual
 zoom-control behavior, live provider/remote freshness and production readiness
 are not established. Performance/stress optimization remains deferred to 4H-C;
 final release/exact-revision certification remains deferred to Phase 4I.
+
+## Phase 4H-C: Polling, Performance and Final Quality Gate
+
+Starting HEAD: `f40b0f634f714afce43d27ea47323b5077b017f1`. This section is
+additive; the complete prior 4H-A/B report is preserved. No commit, push, Phase
+4I or Phase 5 work is performed.
+
+### Polling ownership and dependencies
+
+All paths below are product GETs under `/api/v1`. Existing TanStack Query
+defaults use a 30-second stale time, one read retry and no window-focus refetch.
+Background interval fetching is not enabled. Multiple observers can share query
+keys and in-flight reads; this is not a claim that all observers share one timer.
+Intervals below are per mounted owner, not a measured whole-application maximum.
+
+| Owner / query key                                                | Endpoint                                                                | Trigger / interval / termination                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Health banner / `health`                                         | `/health`                                                               | Mounted shell, 30 seconds; retained independently of operation state.                                                                                                                                                                                                    |
+| Job hook / `job, handle`                                         | `/jobs/:handle`                                                         | Explicit handle from an existing user action, 900 ms; stops on COMPLETED/FAILED, read error or 15-minute deadline; read retry disabled and explicit status check retained. UNKNOWN is not terminal. One deadline timeout per handle is cleared on handle change/unmount. |
+| Review PR/session/diff keys                                      | `/pull-requests/:id`, `/review-sessions/:id`, `/pull-requests/:id/diff` | No recurring interval; mount, explicit refresh and existing invalidations.                                                                                                                                                                                               |
+| Candidate conversation/proposal keys                             | Session conversations and conversation patch proposals                  | No recurring interval; selected identity, explicit reads/refresh.                                                                                                                                                                                                        |
+| Legacy `patch-proposals, conversationId, afterId`                | `/conversations/:id/patch-proposals`                                    | Mounted legacy proposal list; 2 seconds before, 10 seconds after. Retains metadata freshness for externally created proposals/decisions, with up to 10-second periodic discovery latency rather than 2 seconds. Mutation invalidations remain unchanged.                 |
+| Legacy `patch-applications, proposalId, afterId`                 | `/patch-proposals/:id/applications`                                     | Before: unconditional 1 second. After: 1 second when any row is QUEUED/PREPARING/APPLYING/RUNNING; 10 seconds for absent/error/unknown/UNCERTAIN; no periodic read for an authoritative empty or entirely terminal list.                                                 |
+| Legacy `validations, applicationId, afterId`                     | `/patch-applications/:id/validations`                                   | Same scoped operation policy as above; state field rather than status is supported.                                                                                                                                                                                      |
+| Candidate application / `patch-applications, proposalId, cursor` | Proposal applications                                                   | Existing 1.5 seconds only for the explicitly selected active application; deselection stops it. Identity checks, error handling and manual refresh remain unchanged.                                                                                                     |
+| Candidate validation / `validations, applicationId, cursor`      | Application validations                                                 | Existing 1.5 seconds only for selected active validation; selected application owns the read and presentation.                                                                                                                                                           |
+| Static / `validation-static, validationId, filters, afterId`     | `/validations/:id/static-findings`                                      | Existing 1 second while parent validation is active, with a final read when it becomes inactive.                                                                                                                                                                         |
+| ML / `validation-ml, validationId`                               | `/validations/:id/ml-assessment`                                        | Existing 1.5 seconds while recorded assessment is active; otherwise stops.                                                                                                                                                                                               |
+| AI / `validation-ai, validationId` plus ML prerequisite key      | `/validations/:id/ai-rereview` and ML assessment                        | Existing 1.5 seconds while recorded AI readback is active; otherwise stops. No provider request is initiated by selection.                                                                                                                                               |
+| Conversation detail / `conversation, selectedId, afterSequence`  | `/conversations/:id`                                                    | Existing 1 second for queued/running messages, otherwise no interval.                                                                                                                                                                                                    |
+| Turn execution / `collaboration-turn, turnId`                    | `/collaboration-turns/:id`                                              | Existing 1 second while queued/running; validates returned turn identity and invalidates conversation on status change.                                                                                                                                                  |
+| Tool list / `investigations, turnId, afterSequence`              | `/collaboration-turns/:id/evidence`                                     | Existing 1 second while turn is queued/running; same initial key can be observed by execution/evidence UI. No reproduced duplicate-request defect justified changing it.                                                                                                 |
+| Tool detail / `investigation, selectedId`                        | `/collaboration-tools/:id`                                              | Existing 1 second only when selected returned tool is RUNNING; citation/detail scope controls remain unchanged.                                                                                                                                                          |
+| Citation / `evidence, evidenceId`                                | `/evidence-references/:id`                                              | Explicit selection, no recurring interval.                                                                                                                                                                                                                               |
+
+The only production changes are the shared pure operation interval policy, its
+two legacy consumers and the slower legacy proposal metadata interval. No
+request ID, mutation retry, idempotency, execution, authorization, payload,
+provider budget or server contract changes occur. Existing successful mutation
+invalidations and mount/navigation recovery remain intact. Periodic terminal
+reads stop, not future explicitly requested reads. An uncertain read never
+rewrites recorded status or cleanup into success/failure.
+
+### Reproduced waste and measured comparison
+
+Waste was reproduced on the unchanged certified production build before source
+edits. Baseline build: `EflkKxmF4uo_aETSUJqrm`; final production build:
+`uLQ1gldh5eRr0WngkwaZQ`. Windows desktop, installed headless Chrome via
+Playwright, production Next server, real seeded API authentication and clearly
+SYNTHETIC intercepted product GETs were used. No operation executes.
+
+Counts use 6.2-second baseline windows and 6.2/12.2-second final windows after
+mount/setup. Rates are counts divided by elapsed time multiplied by 60, **not
+sustained one-minute benchmarks**; phase offsets and initial reads affect short
+windows. Interval instrumentation wraps browser setInterval/clearInterval and
+counts live interval handles, excluding timeouts, browser internals and server
+timers. Heap snapshots use optional performance.memory, without forced GC.
+
+| Scenario                        | Before                                                                                | After                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Real idle review                | No product GET in 6.2 seconds; one 30-second health interval                          | Same; no new operation poller                                                                                                     |
+| Legacy successful terminal view | Application 57.96/min, validation 57.96/min, proposals 28.98/min; four live intervals | Application/validation zero; proposals 4.92/min in 12.2 seconds; two live intervals (health + 10-second metadata)                 |
+| Failed terminal application     | 57.94/min application reads                                                           | Zero application reads; authoritative failure retained                                                                            |
+| Active application              | 57.99/min application reads                                                           | 57.95/min; one-second active polling retained                                                                                     |
+| UNCERTAIN cleanup               | 58.00/min application reads                                                           | 4.91/min in 12.2 seconds; preparation still disabled; 10-second recovery retained                                                 |
+| Failed product GET              | Not part of paired baseline                                                           | Two application reads in 12.2 seconds, including existing read retry; failure remains visible and preparation disabled            |
+| 750-ms synthetic GET latency    | Four application and three validation reads per 6.2 seconds                           | One initial application/validation read in 6.2 seconds, then no recurring terminal interval; static/ML/AI readbacks still fetched |
+| Legacy panels unmounted         | No application read; health interval only                                             | Same; no orphan operation interval observed                                                                                       |
+| Selected/deselected candidate   | Two selected active reads in 3.2 seconds; zero after deselection                      | Same; different active candidate owns subsequent reads, old validation is neither polled nor substituted                          |
+
+The transition fixture becomes FAILED on its third real browser GET of synthetic
+application data. Final polling stops afterward, unlike the baseline. This
+proves terminal readback behavior, not real executor completion latency. React
+render/commit counts and provider/executor time-to-terminal were not measured.
+There is no claim of universal duplicate-request prevention. The measured waste
+was unnecessary repeated terminal reads, not repeated execution.
+
+The final polling proof passes **17 assertions**, including failed GET recovery,
+active and terminal reads, uncertain cleanup, navigation/unmount, candidate
+switching and no forbidden requests/runtime exceptions. Headless Chrome kept
+the first tab visible when a second tab was foregrounded: genuine OS/background
+visibility is **not proven**. A separately labeled SYNTHETIC visibilityState
+event test pauses active reads while hidden and resumes them on restoration.
+Interval handles remain allocated while hidden; this does not claim timers are
+removed. Sampled final polling DOM counts range 210-577 and JS heaps about
+8.2-18.9 MB; these are observations, not a memory-leak or performance guarantee.
+
+### Cumulative checks and scope of evidence
+
+Newly executed regression gates: **280 frontend tests passed, zero skipped**;
+**907 workspace tests passed, 21 skipped**; the six focused operation-policy
+tests are included in the frontend total. Sequential workspace typecheck and
+the production Next build pass. Unchanged API/packages were built for the
+isolated API image. Production review route remains about 78.5 kB, with 212 kB
+first-load JS (baseline route about 78.4 kB and the same rounded first-load size);
+no bundle-size improvement is claimed.
+
+Real authentication/navigation proof passes **163 assertions**. It covers
+invalid/valid login, independent GitHub control without activating OAuth,
+session refresh, logout, protected routes, real developer authorization denial,
+privacy-safe route titles, keyboard navigation and verdict-dialog focus without
+submission, recorded history and empty share metadata. GET-only error fixtures
+exercise loading/forbidden/network/server/unknown recovery and intercepted
+public-reader/compatibility URLs. Authentication, permissions and identities
+are never mocked.
+
+The final small contextual regression passes **17 assertions**; the enlarged
+SYNTHETIC evidence case passes **27**, including sixteen rendered references,
+revision A/B invalidation, unavailable context/reselection, nine-width document
+containment, no eager N+1 detail reads, no forbidden operation and no runtime
+exception. These are browser presentation proofs, not persistence, remote
+freshness, exact Git execution or provider quality proofs.
+
+A separate final-build probe records **23 layout/focus measurements**, including
+candidate diff and paired checks at all nine required widths, with no forbidden
+request or runtime exception. **57 visible metadata contrast observations**
+range **7.03:1-7.73:1** against their observed backgrounds. This preserves the
+earlier contrast correction; it is not a newly measured before/after contrast
+improvement. Existing 320-pixel analysis code/symbol internal overflow remains
+visible and disclosed; it is not fixed or hidden by this polling slice.
+
+Failed harness attempts are retained as limitations, not successful checks:
+concurrent drivers exhausted the unchanged real auth throttle (429), so final
+drivers ran sequentially with existing paced navigation/refresh; a large-thread
+selector incorrectly expected all thirty threads before the existing Show more
+control; a scroll assertion targeted the horizontal rather than vertical scroll
+owner; and expanding evidence produced sixteen historical-warning labels,
+requiring a plural-aware selector and count assertion. Only ignored proof
+drivers changed in response. Authentication/backend/production rendering were
+not altered or bypassed to satisfy those attempts. Expected 401/403/404,
+simulated network/500/422 and navigation-aborted diagnostics remain disclosed.
+
+The canonical root format glob was attempted but cannot enumerate the local
+ML .pytest_cache directory (EPERM). No permissions or ignore rules were changed.
+A tracked-file comparison using the installed canonical Prettier configuration
+and existing ignore rules establishes **135 baseline / 135 current**, identical
+failing set. The touched validation-panel has pre-existing formatting debt;
+other touched code/tests pass scoped formatting. Report additions are formatted
+without changing the historical prefix. No Python edits; Ruff is not rerun and
+known debt remains. The deterministic source scanner reviews 70 files:
+**0 errors, 7 warnings, 81 suggestions**, not formal accessibility certification.
+
+### Bounded large-data proof and final browser result
+
+The successful final large-data run passes **212 assertions** and records 97
+layout observations. It uses SYNTHETIC GET-only data: 40 changed files with long
+paths, 60 findings across four severities, 30 discussion threads, and a 129,050-byte
+serialized diff response. One file has 120 added lines; the other 39 have ten.
+Each individual patch remains bounded. Available/complete provenance is a
+browser fixture only, never fabricated PostgreSQL provenance. Existing
+unavailable/truncation behavior is retained rather than reconstructing content.
+The explicit Show 24 more threads control is used after the initial six.
+
+All required widths **1920, 1440, 1280, 1100, 800, 768, 390, 360, 320** are
+checked, with additional breakpoint/short-height observations. No document
+overflow or primary-control overflow is detected in the asserted layouts;
+long code remains horizontally scrollable inside its own region. On the idle
+large patch, explicit vertical/horizontal positions **150/100 remain 150/100**
+after 3.2 seconds. This is a scoped scroll-stability observation, not a claim
+about all live operation updates or browser scroll behavior.
+
+Playwright wall-clock interactions (including auto-wait/scroll/control handling,
+not React-only render duration):
+
+| Width | Discussion plus expand threads (ms) | Return to Changes (ms) |
+| ----- | ----------------------------------- | ---------------------- |
+| 1920  | 104                                 | 58                     |
+| 1440  | 89                                  | 67                     |
+| 1280  | 99                                  | 53                     |
+| 1100  | 100                                 | 56                     |
+| 800   | 163                                 | 42                     |
+| 768   | 91                                  | 56                     |
+| 390   | 105                                 | 55                     |
+| 360   | 87                                  | 48                     |
+| 320   | 70                                  | 51                     |
+
+Sampled Changes-view DOM counts are 1,429-1,457; optional JS heaps are about
+12.4-22.7 MB. No equivalent paired baseline large-data benchmark, controlled GC,
+React profiler or Core Web Vitals run was performed. These values establish
+observed responsiveness for bounded fixtures, **not an optimization improvement,
+memory-leak clearance, production load capacity or performance SLA**. No new
+large-data product defect required a rendering change or backend contract split.
+
+Final-build browser assertions total **436**: authentication/navigation 163,
+large-data/cumulative layouts 212, small contextual regression 17, enlarged
+evidence regression 27, final polling 17. The separate 23 layout/contrast
+measurements and seven baseline polling assertions are not added to that final
+assertion count. Final runs have zero forbidden product/external requests and
+zero runtime exceptions. One earlier full-run navigation reached Chrome's
+connection-interrupted page while Next still returned HTTP 200. The final run
+used a bounded read-navigation retry guard, needed **zero navigation retries**,
+and completed successfully; the failed run is not counted as success or hidden.
+
+### Runtime boundaries, cleanup and final integrity
+
+Owned disposable resources, all removed:
+
+- Project: `codelens_phase4hc_quality_20261010`.
+- Containers: project `-postgres-1`, `-redis-1`, `-api-1`.
+- Networks: project `_default` and `_loopback`.
+- Database/user: `codelens_4hc`; PostgreSQL `/var/lib/postgresql/data` and Redis
+  `/data` use tmpfs; no named data volume.
+- Final loopback ports: PostgreSQL 56483, Redis 56383, API 45483, Next 43483.
+- Unique API image: `codelens-phase4hc-quality-20261010:api`, removed.
+
+The initially planned API port 55483 failed Windows bind permissions despite no
+listener. Only new owned configuration changed to verified-free 45483/43483,
+with matching browser API URL/CORS. An initial build with the old URL was not
+used as browser evidence; both measured baseline and final builds use the final
+ports. No host network policy or existing resource was modified to resolve this.
+
+Workers, brokers and ML runtime are absent; external provider/GitHub credentials
+are absent. Approved normal demo initialization is followed only by real
+authentication/session activity and product GETs. Synthetic responses are
+GET-only and remain browser-local. Public-share reads are intercepted before
+the API to avoid view-counter mutation. No import/sync, analysis, investigation,
+provider, RAG indexing, conversation/comment/proposal/candidate/validation,
+reassessment/re-review, verdict or share-creation operation is invoked.
+
+All **49 product-table count/digest fingerprints remain identical** after final
+browser work. User, Account and AuditLog are excluded because permitted session
+activity can change them. No synthetic product records are persisted. Method,
+sanitized path and fixture source are recorded locally, without headers, tokens,
+passwords or response-body diagnostics. Expected authentication/error/network
+diagnostics are not suppressed. This is not universal secret non-leakage proof.
+
+Owned Next processes 10248/16880 were identified and removed. Compose containers,
+both networks, tmpfs database data and the unique image were removed. All four
+final ports have zero listeners; no owned runtime/browser process remains.
+Pre-existing container and volume identities are retained. Ignored
+`.codelens-tmp/phase4h-c/` drivers/config/JSON and external screenshots remain
+local evidence only, excluded from Git and production Docker images by existing
+rules. No earlier certified runtime was reused or modified.
+
+Exact proposed inventory: **six files, four modified and two added**:
+
+- Modified: `apps/web/src/components/workspace/patch-application-panel.tsx`.
+- Modified: `apps/web/src/components/workspace/validation-panel.tsx`.
+- Modified: `apps/web/src/components/workspace/patch-proposal-card.tsx`.
+- Modified: this existing Phase 4H report.
+- Added: `apps/web/src/lib/operation-polling.ts`.
+- Added: `apps/web/test/operation-polling.test.tsx`.
+
+All 12 migrations and lock remain byte-identical to starting HEAD. Required
+SHA-256 values remain:
+
+- 0_baseline: `e3ea352f1566612be1d402caa215382002e2b2fe299f4818acaf4fc3d2bbe8ab`.
+- Diff provenance: `883415a0f00d3001f9fa5e71f832a38aba7916b7d2e55a07a143c4be00cdf698`.
+- Migration lock: `da12fa8151832c7297598b1504d698d41d7b1f6331b5bb7f458e8725356ba9c8`.
+- Protected untracked 4A audit: `a64f828808d5eb3dd5fb72e3179432f6af7b2c03e414b9bca0e877343c98d08c`.
+
+Final diff/inventory review finds no backend, contract, migration, dependency,
+CI, security/token, provider, sandbox or unrelated source change. No production
+synthetic identity, debugging instrumentation, unsafe source rendering, new
+execution trigger, cross-candidate substitution or consequential POST retry is
+introduced. Unknown/error reads remain nonterminal; UNCERTAIN remains blocked;
+active rows take precedence over terminal rows in mixed lists. Explicit reads
+and server authority remain necessary: stopped terminal lists do not promise
+automatic discovery of another client's newly created operation. Proposal
+metadata retains its slower foreground polling cadence, not a delivery SLA.
+
+Scoped formatting and git diff --check pass subject to the disclosed pre-existing
+validation-panel debt and root-glob EPERM. Tracked Prettier debt remains 135 with
+no introduced failure; scoped credential-value-shaped patterns find zero matches
+in the six files. Nothing is staged, committed or pushed. Historical report
+prefix and the untracked protected audit remain unchanged.
+
+Known risk-score drift, formatting/Ruff debt, expected sign-in diagnostics,
+existing internal clipping and all prior provider limitations remain disclosed.
+Phase 3C deterministic verification remains PASSED; real Gemini investigation/
+tool/evidence remains PARTIALLY VERIFIED; final grounded response/citations and
+multi-turn collaboration remain NOT VERIFIED. Real AI re-review is not upgraded.
+Formal WCAG compliance, screen-reader output, exhaustive accessibility, all
+browser/platform behavior, genuine OS-background/zoom behavior, production
+performance, live provider/remote freshness and release certification are not
+established by this phase. No hosted CI ran for the uncommitted 4H-C changes.
+
+Final local status: **4H_C_READY_TO_FREEZE**, within those claim boundaries.
+Proposed subject: `fix(web): stop terminal operation polling and verify workspace quality`.
+No commit/push or Phase 4I/5 work is authorized by this result.

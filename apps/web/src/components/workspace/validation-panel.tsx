@@ -10,6 +10,7 @@ import { ApiError } from '@/lib/api-client';
 import { ValidationStaticPanel } from './validation-static-panel';
 import { ValidationMlPanel } from './validation-ml-panel';
 import { ValidationAiPanel } from './validation-ai-panel';
+import { operationPollingInterval } from '@/lib/operation-polling';
 
 const comparisons: Record<string, string> = {
   BOTH_PASS: 'Original and patched candidate passed the check.',
@@ -28,7 +29,8 @@ export function ValidationPanel({ application }: { application: PatchApplication
   const query = useQuery({
     queryKey: ['validations', application.id, afterId],
     queryFn: () => api.validations(application.id, afterId),
-    refetchInterval: 1000,
+    refetchInterval: (q) =>
+      operationPollingInterval(q.state.data?.items, q.state.status === 'error'),
   });
   const mutation = useMutation({
     mutationFn: (cancelId?: string) => {

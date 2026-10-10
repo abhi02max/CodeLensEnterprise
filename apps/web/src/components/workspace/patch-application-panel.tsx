@@ -8,6 +8,7 @@ import { Alert, Button } from '@/components/ui/primitives';
 import { api } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { ValidationPanel } from './validation-panel';
+import { operationPollingInterval } from '@/lib/operation-polling';
 
 const labels: Record<string, string> = {
   QUEUED: 'Queued',
@@ -25,7 +26,8 @@ export function PatchApplicationPanel({ proposal }: { proposal: PatchProposalVie
   const query = useQuery({
     queryKey: ['patch-applications', proposal.id, afterId],
     queryFn: () => api.patchApplications(proposal.id, afterId),
-    refetchInterval: 1000,
+    refetchInterval: (q) =>
+      operationPollingInterval(q.state.data?.items, q.state.status === 'error'),
   });
   const mutation = useMutation({
     mutationFn: (cancelId?: string) => {

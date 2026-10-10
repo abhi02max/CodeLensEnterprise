@@ -15,7 +15,7 @@ export function PatchProposals({ conversationId }: { conversationId: string }) {
   const query = useQuery({
     queryKey: ['patch-proposals', conversationId, afterId],
     queryFn: () => api.patchProposals(conversationId, afterId),
-    refetchInterval: 2000,
+    refetchInterval: 10_000,
   });
   return (
     <section aria-label="Patch proposals" className="my-3 space-y-3">
